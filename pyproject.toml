@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cml_tools"
+version = "0.0.1"
+authors = [
+  { name="Tom Lasko", email="tom.lasko@vumc.org" },
+  { name="John Still", email="john.m.still@vumc.org" },
+]
+description = "Computational Medicine Lab Tools Repository (Version 2)"
+readme = "README.md"
+requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+# Neither seems to work?
+#license = "MIT"
+#license-files = ["LICENSE"]

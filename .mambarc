@@ -1,0 +1,10 @@
+# This file goes in $MAMBA_ROOT_PREFIX
+# Intel silently removed its channel and replaced it with the URL below
+
+channels:
+    - conda-forge
+    - pytorch
+    - https://software.repos.intel.com/python/conda/
+
+
+# vim: ft=yaml
