@@ -5,7 +5,7 @@ function.
 """
 import matplotlib.pyplot as plt
 import numpy as np
-RNG = np.random.default_random()
+RNG = np.random.default_rng()
 
 
 def get_subset(pred_mean, pred_vars, true_vals, nmax=10_000, mask=None, rng=RNG):
@@ -24,7 +24,7 @@ def get_subset(pred_mean, pred_vars, true_vals, nmax=10_000, mask=None, rng=RNG)
         true_vals = true_vals[mask]
     n = len(pred_mean)
     if nmax < n:
-        indices = RNG.integers(0, n, size=nmax)
+        indices = RNG.choice(n, size=nmax, replace=False, shuffle=False)
         indices = indices[np.argsort(pred_vars[indices])]
     else:
         indices = np.argsort(pred_vars)
@@ -78,5 +78,35 @@ def plot_errors_and_intervals(errors, intervals, clip=None, xoffset=0, ax=None):
         ax.scatter(xs[~mask], errors[~mask], marker='+', color='C1')
     else:
         ax.fill_between(xs, intervals, -intervals, alpha=0.5)
-        ax.scatter(xs, error, marker='+', color='C0')
+        ax.scatter(xs, errors, marker='+', color='C0')
+    ax.set_xlabel(r'$i^{th}$ Prediction')
+    ax.set_ylabel('Error')
+    ax.set_title('Prediction Errors')
+    return ax
+
+
+def plot_prediction_errors(pred_mean, pred_vars, true_vals,
+                           nmax=10_000, mask=None, figsize=(9, 6),
+                           clip=None, xoffset=0, rng=RNG):
+    """
+    Produce a plot directly from predictions. For argument details, see the
+    function `get_subset` `get_err_interval` `plot_errors_and_intervals`.
+    """
+    batch_mean, batch_vars, batch_true = get_subset(pred_mean, pred_vars,
+                                                    true_vals, nmax=nmax,
+                                                    mask=mask, rng=rng)
+    errs, ints = get_err_interval(batch_mean, batch_vars, batch_true)
+    fig, ax = plt.subplots(figsize=figsize, layout='constrained')
+    plot_errors_and_intervals(errs, ints, clip=clip, xoffset=xoffset, ax=ax)
+
+    if nmax is None:
+        nmax_s = 'All Data'
+    elif nmax >= 1000:
+        if nmax % 1000 > 0:
+            nmax_s = f'Approx. {nmax // 1000}k samples'
+        else:
+            nmax_s = f'{nmax // 1000}k samples'
+    else:
+        nmax_s = f'{nmax} samples'
+    ax.set_title(f'Prediction Errors ({nmax_s})')
     return ax
