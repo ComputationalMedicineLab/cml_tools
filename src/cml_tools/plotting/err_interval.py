@@ -245,5 +245,10 @@ def plot_sequence_interpolations(deltas, values, points,
                       alpha=0.75, color='black', linestyle='--',
                       label='Prediction Confidence')
 
+    # See note above about generic labels - caller is responsible for specifics
+    ax.set_xlabel('Offset Value')
+    ax.set_ylabel('Target Value')
+    ax.set_title('Interpolations over a Sequence of Targets')
+
     ax.legend()
     return ax
