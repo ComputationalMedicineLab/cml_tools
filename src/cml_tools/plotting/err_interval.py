@@ -43,6 +43,14 @@ def get_subset(pred_mean, pred_vars, true_vals, nmax=10_000, mask=None,
         return batch_mean, batch_vars, batch_true
 
 
+def get_conf_interval(variances, scale=1.96):
+    """Produce a confidence interval from variances"""
+    # Writing `intervals = 1.96 * np.sqrt(pred_vars))` causes some bizarre
+    # error (silent segfault?) in jupyterlab notebooks which kills the kernel.
+    # No idea why. Best to encapsulate this process.
+    return np.multiply(scale, np.sqrt(variances))
+
+
 def get_err_interval(pred_mean, pred_vars, true_vals):
     """
     Produce error and confidence interval ndarrays from input ndarrays of
@@ -50,10 +58,7 @@ def get_err_interval(pred_mean, pred_vars, true_vals):
     index.
     """
     errors = (pred_mean - true_vals)
-    # Writing `intervals = 1.96 * np.sqrt(pred_vars))` causes some bizarre
-    # error (silent segfault?) in jupyterlab notebooks which kills the kernel.
-    # No idea why.
-    intervals = np.multiply(1.96, np.sqrt(pred_vars))
+    intervals = get_conf_interval(pred_vars)
     return errors, intervals
 
 
@@ -135,7 +140,7 @@ def plot_prediction_by_epoch(target, means, variances, ax=None):
         ax = plt.gca()
 
     means = np.array(means)
-    confs = np.multiply(1.96, np.sqrt(np.array(variances)))
+    confs = get_conf_interval(variances)
     xs = np.arange(len(means))
 
     ax.scatter(xs, means, alpha=0.5, label='Predicted Value')
@@ -144,4 +149,101 @@ def plot_prediction_by_epoch(target, means, variances, ax=None):
     ax.set_title(f'Prediction and Confidence Interval as a function of Epoch')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Value')
+    ax.legend()
+    return ax
+
+
+def plot_sequence_predictions(deltas, values, pred_mean, pred_vars, ax=None,
+                              plot_error=None, err_color='C1'):
+    """
+    Plot a sequence of target values against a Gaussian model's predicted mean
+    and variance. If `plot_error`, the targets which are beyond the predicted
+    mean's confidence interval are highlighted `err_color` (C1 by default). If
+    `plot_error` is a string containing:
+
+    1. "inline": the errors are plotted between target and prediction.
+    2. "oob" or "out_of_bound": the errs are *only* plotted which lie beyond
+       the prediction confidence interval.
+    3. "offset": the errors are plotted as magnitudes from y = 0.
+    """
+    if ax is None:
+        ax = plt.gca()
+
+    err, conf = get_err_interval(pred_mean, pred_vars, values)
+
+    # Basic Plot: 'x' for targets, 'o' for predictions, vline conf intervals
+    ax.scatter(deltas, pred_mean, zorder=-2.5, label='Predictions')
+    ax.vlines(deltas, pred_mean+conf, pred_mean-conf, alpha=0.25,
+              label='Prediction Confidence')
+    ax.scatter(deltas, values, color='black', marker='x',
+               zorder=2.5, label='Target Value')
+
+    if plot_error:
+        errw = np.where(err > 0, pred_mean-conf, pred_mean+conf)
+        mask = np.abs(err) > conf
+        # Always color the target markers for targets which are outside the
+        # confidence interval of the prediction.
+        ax.scatter(deltas[mask], values[mask], alpha=0.9,
+                   color=err_color, marker='x', zorder=2.5,
+                   label='Prediction Out of Interval')
+        # Plot the distance from prediction to target
+        if plot_error == 'inline':
+            ax.vlines(deltas, values, pred_mean,
+                      color=err_color, alpha=0.75,
+                      label='Prediction Error')
+        # Plot the distance from prediction to nearest confidence interval edge
+        # only for predictions which are beyond the confidence interval.
+        if plot_error in ('oob', 'out_of_bound'):
+            ax.vlines(deltas[mask], errw[mask], values[mask],
+                      color=err_color, alpha=0.75,
+                      label='Prediction Error (Beyond CI)')
+        # Plot the error as offset from zero.
+        if plot_error == 'offset':
+            ax.axhline(0.0, linestyle='--', color='black', alpha=0.25)
+            ax.vlines(deltas, 0.0, err, color=err_color, alpha=0.75,
+                      label='Prediction Error (Absolute)')
+
+    # Generic, default labels - in practice, the caller will set these as
+    # needed (i.e., xlabel "Fractional Days"; ylabel "Potassium Value"; etc).
+    ax.set_xlabel('Offset Value')
+    ax.set_ylabel('Target Value')
+    ax.set_title('Predictions over a Sequence of Targets')
+
+    ax.legend()
+    return ax
+
+
+def plot_sequence_interpolations(deltas, values, points,
+                                 interpolations,
+                                 interpolation_variances,
+                                 predictions=None,
+                                 prediction_variances=None,
+                                 ax=None, plot_guides=True):
+    """Plot a set of interpolations against the target values"""
+    if ax is None:
+        ax = plt.gca()
+
+    iconf = get_conf_interval(interpolation_variances)
+
+    ax.plot(points, interpolations, label='Interpolations', zorder=-2.5)
+    ax.fill_between(points, interpolations+iconf, interpolations-iconf,
+                    alpha=0.25, label='Interpolation Confidence')
+
+    # TODO: annotate the target guide lines with the corresponding values?
+    if plot_guides:
+        for x in deltas:
+            ax.axvline(x, linestyle='--', alpha=0.25)
+
+    ax.scatter(deltas, values, color='black', marker='x',
+               zorder=2.5, label='Target Value')
+
+    if predictions is not None:
+        ax.scatter(deltas, predictions, zorder=-2.5, label='Predictions')
+        if prediction_variances is not None:
+            pconf = get_conf_interval(prediction_variances)
+            ax.vlines(deltas, predictions+pconf, predictions-pconf,
+                      alpha=0.75, color='black', linestyle='--',
+                      label='Prediction Confidence')
+
+    ax.legend()
     return ax
