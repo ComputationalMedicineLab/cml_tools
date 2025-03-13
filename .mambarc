@@ -1,10 +1,10 @@
 # This file goes in $MAMBA_ROOT_PREFIX
-# Intel silently removed its channel and replaced it with the URL below
+# Intel silently removed its channel and replaced it with the URL below.
+# NOTE: As of late 2024, pytorch no longer maintains its conda channel.
 
 channels:
     - conda-forge
-    - pytorch
     - https://software.repos.intel.com/python/conda/
-
+      #- pytorch
 
 # vim: ft=yaml
