@@ -11,10 +11,10 @@ pip --version
 pip cache purge
 
 # The first is CPU only, the second is for Cuda 12.6 - change as appropriate
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 #pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 
-pip3 install numpy scipy pandas sympy cython matplotlib seaborn jupyter ipython \
+pip install numpy scipy pandas sympy cython matplotlib seaborn jupyter ipython \
     scikit-learn pyodbc psycopg2-binary databricks-sql-connector
 
 # Post-install version checks

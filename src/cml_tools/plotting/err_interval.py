@@ -131,7 +131,8 @@ def plot_prediction_errors(pred_mean, pred_vars, true_vals,
     return fig, ax
 
 
-def plot_prediction_by_epoch(target, means, variances, ax=None):
+def plot_prediction_by_epoch(target, means, variances, ax=None, scatter=True,
+                             scatter_alpha=0.5, target_fmt='.2f'):
     """
     Plot the target value, predicted value, and confidence interval over some
     number of batches or epochs (assumed to be epochs).
@@ -143,9 +144,14 @@ def plot_prediction_by_epoch(target, means, variances, ax=None):
     confs = get_conf_interval(variances)
     xs = np.arange(len(means))
 
-    ax.scatter(xs, means, alpha=0.5, label='Predicted Value')
-    ax.vlines(xs, means+confs, means-confs, alpha=0.25)
-    ax.axhline(target, linestyle='--', alpha=0.5)
+    if scatter:
+        ax.scatter(xs, means, alpha=scatter_alpha, label='Predicted Value')
+        ax.vlines(xs, means+confs, means-confs, alpha=0.25)
+    else:
+        ax.plot(xs, means, label='Predicted Value')
+        ax.fill_between(xs, means+confs, means-confs, alpha=0.25)
+    label = f'Target {format(target, target_fmt)}'
+    ax.axhline(target, linestyle='--', alpha=0.5, label=label)
     ax.set_title(f'Prediction and Confidence Interval as a function of Epoch')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Value')
@@ -243,7 +249,7 @@ def plot_sequence_interpolations(deltas, values, points,
             pconf = get_conf_interval(prediction_variances)
             ax.vlines(deltas, predictions+pconf, predictions-pconf,
                       alpha=0.75, color='black', linestyle='--',
-                      label='Prediction Confidence')
+                      label='Prediction Confidence', zorder=-2.5)
 
     # See note above about generic labels - caller is responsible for specifics
     ax.set_xlabel('Offset Value')
