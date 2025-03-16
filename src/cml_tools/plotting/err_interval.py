@@ -1,7 +1,8 @@
 """
 Functions for visualizing the results of a model which produces mean/variance
 estimates, trained with e.g. pytorch's `torch.nn.GaussianNLLLoss` loss
-function.
+function. Many plots include visualizations of the error and the confidence
+interval derived from the predicted variance (hence the module name).
 """
 import matplotlib.pyplot as plt
 import numpy as np

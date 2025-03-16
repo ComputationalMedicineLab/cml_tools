@@ -5,7 +5,7 @@ import numpy as np
 
 def plot_epoch_losses(train_loss=None, test_loss=None, *,
                       reshape=None, agg=np.mean, a_min=None, a_max=None,
-                      ax=None, marker='o', alpha=0.25):
+                      ax=None, marker='o', alpha=0.25, mark_min=True):
     """
     Each loss array (`train_loss` and `test_loss`) is a 2-dim ndarray of
     loss values of dimensions `[epochs, values]`. `values` can be loss values
@@ -58,9 +58,13 @@ def plot_epoch_losses(train_loss=None, test_loss=None, *,
     # x-axis should now have a point per epoch. Plot the loss curves at last.
     if train_loss is not None:
         ax.plot(ys0, marker=marker, alpha=alpha, label='Train Loss')
+        if mark_min:
+            ax.scatter(np.argmin(ys0), np.min(ys0), color='C1', marker='x')
 
     if test_loss is not None:
         ax.plot(ys1, marker=marker, alpha=alpha, label='Test Loss')
+        if mark_min:
+            ax.scatter(np.argmin(ys1), np.min(ys1), color='C1', marker='x')
 
     # Get the aggregation function name: if it exists, format it. Set title.
     if (name := getattr(agg, '__name__', '')):
@@ -77,3 +81,45 @@ def plot_epoch_losses(train_loss=None, test_loss=None, *,
     ax.set_ylabel(f'{name}Loss')
     ax.set_title(title)
     return ax
+
+
+def plot_result_histograms(losses, predictions, variances=None,
+                           figsize=(12, 4), n_bins=100, yscale='log'):
+    """
+    Produce a 2 or 3-panel overview of a model's outputs. If `variances` is
+    given, 3 panels are produces; otherwise only the losses and predictions are
+    histogrammed.
+
+    The three inputs losses, predictions, variances are 2-tuples, the first
+    element from training and the second from evaluation. Each tuple element is
+    a list of ndarrays. Each ndarray has the losses (predictions, variances)
+    per instance over a training epoch. Hence `len(losses[0])` is the number of
+    training epochs and `len(losses[0][0])` the number of training instances.
+    """
+    ncols = 2 if variances is None else 3
+    fig, axes = plt.subplots(figsize=figsize, ncols=ncols, layout='constrained')
+
+    def _hist(ax, X, label, n_bins=n_bins):
+        # X is a (train, test) 2-tuple: put them both into the same bins
+        X0, X1 = X[0].ravel(), X[1].ravel()
+        lo = min(min(X0), min(X1))
+        hi = max(max(X0), max(X1))
+        bins = np.linspace(lo, hi, n_bins)
+        ax.hist(X0, bins=bins, histtype='step', label=f'Train {label}')
+        ax.hist(X1, bins=bins, histtype='step', label=f'Test {label}')
+
+    _hist(axes[0], losses, 'Loss')
+    _hist(axes[1], predictions, 'Prediction')
+    if variances is not None:
+        _hist(axes[2], variances, 'Prediction Variance')
+
+    for ax in axes:
+        ax.legend()
+        ax.set_yscale(yscale)
+
+    n_train = len(losses[0][0])
+    n_test = len(losses[1][0])
+    epochs = len(losses[0])
+    fig.suptitle(f'Overall Results (N={n_train}/{n_test}; '
+                 f'Trained {epochs:,} Epochs)')
+    return fig, ax
