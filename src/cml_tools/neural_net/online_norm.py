@@ -14,12 +14,13 @@ import torch.nn.functional as F
 
 class OnlineStandardScaler(nn.Module):
     """Shifts input instances by online estimations of mean and variance"""
-    def __init__(self, num_features, eps=1e-5, frozen=False, fill_nan=None,
+    def __init__(self, num_features, eps=1e-5, fill_nan=None, frozen=False,
                  device=None, dtype=None):
         super().__init__()
+        self.num_features = num_features
         self.eps = eps
-        self.frozen = frozen
         self.fill_nan = fill_nan
+        self.frozen = frozen
         factory_kwargs = {'device': device, 'dtype': dtype}
         running_mean = torch.zeros(num_features, **factory_kwargs)
         running_var = torch.ones(num_features, **factory_kwargs)
@@ -31,6 +32,12 @@ class OnlineStandardScaler(nn.Module):
         self.register_buffer('running_mean', running_mean)
         self.register_buffer('running_var', running_var)
         self.register_buffer('running_num', running_num.to(torch.long))
+
+    def extra_repr(self):
+        return (
+            f'num_features={self.num_features}, eps={self.eps}, '
+            f'fill_nan={self.fill_nan}, frozen={self.frozen}'
+        )
 
     def reset_running_stats(self):
         self.running_mean.zero_(0)
