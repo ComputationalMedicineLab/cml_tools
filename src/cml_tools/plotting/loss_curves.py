@@ -28,14 +28,19 @@ def plot_epoch_losses(train_loss=None, test_loss=None, *,
         ys0 = ys0.reshape(reshape)
         ys1 = ys1.reshape(reshape)
 
-    # Agg must be some kind of ufunc (min/max/mean) that has an "axis" arg
+    # Using a list comp here instead of an axis argument allows (1) the agg
+    # func to be a func that doesn't take that argument, but more importantly
+    # (2) we can use array_split or the like to pass in inhomegeous lists of
+    # arrays and still get an aggregation per batch (say we have some random
+    # number of steps, 3512901 or something, and want to visualize the mean per
+    # 1000 steps: this is difficult to do with reshaping and axis args etc).
     if agg is not None:
-        ys0 = agg(ys0, axis=-1)
-        ys1 = agg(ys1, axis=-1)
+        ys0 = np.array([agg(v) for v in ys0])
+        ys1 = np.array([agg(v) for v in ys1])
 
     # Handle clipping: mark where the clip occurs before actually doing it.
     def scatter_from_mask(mask, y):
-        xs = np.argwhere(mask).ravel()
+        xs = np.argwhere(mask).ravel() + 1
         ys = np.full_like(xs, y)
         ax.scatter(xs, ys, marker='x', color='black', zorder=3)
 
@@ -56,15 +61,20 @@ def plot_epoch_losses(train_loss=None, test_loss=None, *,
         ys1 = np.clip(ys1, a_min=a_min, a_max=a_max)
 
     # x-axis should now have a point per epoch. Plot the loss curves at last.
-    if train_loss is not None:
-        ax.plot(ys0, marker=marker, alpha=alpha, label='Train Loss')
+    def plot_curve(ys, name):
+        xs = np.arange(1, len(ys)+1)
+        ys_min = np.min(ys)
+        ys_argmin = np.argmin(ys)+1
+        label = f'{name} Loss (min {ys_min:.4f}; {ys_argmin})'
+        ax.plot(xs, ys, marker=marker, alpha=alpha, label=label)
         if mark_min:
-            ax.scatter(np.argmin(ys0), np.min(ys0), color='C1', marker='x')
+            ax.scatter(ys_argmin, ys_min, color='C1', marker='x')
+
+    if train_loss is not None:
+        plot_curve(ys0, 'Train')
 
     if test_loss is not None:
-        ax.plot(ys1, marker=marker, alpha=alpha, label='Test Loss')
-        if mark_min:
-            ax.scatter(np.argmin(ys1), np.min(ys1), color='C1', marker='x')
+        plot_curve(ys1, 'Test')
 
     # Get the aggregation function name: if it exists, format it. Set title.
     if (name := getattr(agg, '__name__', '')):
@@ -83,18 +93,24 @@ def plot_epoch_losses(train_loss=None, test_loss=None, *,
     return ax
 
 
-def plot_result_histograms(losses, predictions, variances=None,
+def plot_result_histograms(losses, predictions, variances=None, epoch=None,
                            figsize=(12, 4), n_bins=100, yscale='log'):
     """
     Produce a 2 or 3-panel overview of a model's outputs. If `variances` is
     given, 3 panels are produces; otherwise only the losses and predictions are
     histogrammed.
 
-    The three inputs losses, predictions, variances are 2-tuples, the first
-    element from training and the second from evaluation. Each tuple element is
-    a list of ndarrays. Each ndarray has the losses (predictions, variances)
-    per instance over a training epoch. Hence `len(losses[0])` is the number of
-    training epochs and `len(losses[0][0])` the number of training instances.
+    Arguments
+    ---------
+    losses: (ndarray, ndarray)
+    predictions: (ndarray, ndarray)
+    variances: (ndarray, ndarray)
+        Each ndarray is either 1 or 2 dimensions. If 1 dim, then they are the
+        losses (or predictions, or variances) per instance of a single epoch.
+        If 2-dim, then the dimensions are [epochs, instances]. The histograms
+        are flattened over all epochs provided. The first ndarray of each tuple
+        are values from the training cycles, and the second ndarray are value
+        from the test cycles.
     """
     ncols = 2 if variances is None else 3
     fig, axes = plt.subplots(figsize=figsize, ncols=ncols, layout='constrained')
@@ -117,9 +133,15 @@ def plot_result_histograms(losses, predictions, variances=None,
         ax.legend()
         ax.set_yscale(yscale)
 
-    n_train = len(losses[0][0])
-    n_test = len(losses[1][0])
-    epochs = len(losses[0])
+    if len(losses[0].shape) < 2:
+        n_train = len(losses[0])
+        n_test = len(losses[1])
+        epochs = 1
+    else:
+        n_train = len(losses[0][0])
+        n_test = len(losses[1][0])
+        epochs = len(losses[0])
+
     fig.suptitle(f'Overall Results (N={n_train}/{n_test}; '
-                 f'Trained {epochs:,} Epochs)')
+                 f'Trained {epochs:,} Epoch(s))')
     return fig, ax
