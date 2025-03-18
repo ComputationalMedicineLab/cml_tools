@@ -22,4 +22,4 @@ tests:
 	@python -m unittest discover tests -v
 
 sync:
-	rsync -avzP --exclude='__pycache__' --exclude='*pyc' $(shell pwd) /clio/projects
+	rsync -avzP --exclude='__pycache__' --exclude='*pyc' $(shell pwd) /clio/projects --delete
