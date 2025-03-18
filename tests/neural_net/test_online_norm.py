@@ -29,6 +29,12 @@ class TestOnlineStandardScaler(unittest.TestCase):
         self.assertTrue(torch.all(scaler.running_var == 1.0))
         return scaler
 
+    def assert_equality(self, s0, s1):
+        """Check that two scalers are identical"""
+        self.assertTrue(torch.all(s0.running_num == s1.running_num))
+        self.assertTrue(torch.all(s0.running_mean == s1.running_mean))
+        self.assertTrue(torch.all(s0.running_mean == s1.running_mean))
+
     def get_var_mean(self, X, nansafe=False):
         if nansafe:
             m = torch.nanmean(X, axis=0)
@@ -54,23 +60,17 @@ class TestOnlineStandardScaler(unittest.TestCase):
         Y[torch.isnan(X)] = torch.nan
         yv, ym = self.get_var_mean(Y, nansafe=nansafe)
         self.assert_torch_close(yv, torch.tensor(1.0))
-        # There are precision issues here - None of the numpy/torch et el
-        # methods of producing the mean and subtracting it from the vector
-        # produces a vector with zero-means... maybe this is fperr? I don't
-        # know quite what the correct value of atol is that checks *us* instead
-        # of checking torch. Perhaps need a method of quantifying the error.
+        # https://pytorch.org/docs/stable/notes/numerical_accuracy.html#numerical-accuracy
+        # XXX: The expected accuracy of single-precision floats is about 7
+        # decimal places. The default atol of torch.allclose is 1e-8; 1e-7 is
+        # usually sufficient (torch.mean(X - torch.mean(X)) is usuallly <
+        # 1e-7). But the test that checks if this works on an
+        # instance-by-instance basis accumulates more error, so that the
+        # threshold needs to be atol=1e-5.
         self.assert_torch_close(ym, torch.tensor(0.0), atol=1e-5)
 
-    def assert_equality(self, s0, s1):
-        """Check that two scalers are identical"""
-        self.assertTrue(torch.all(s0.running_num == s1.running_num))
-        self.assertTrue(torch.all(s0.running_mean == s1.running_mean))
-        self.assertTrue(torch.all(s0.running_mean == s1.running_mean))
-
     def test_batch_size_one(self):
-        # XXX: This is the test that requires atol=1e-5... the rest seem to
-        # work with atol=1e-7 or better. Accumulating the means one instance at
-        # a time perhaps introduces more error.
+        # XXX: see the comment above in assert_fitness
         for x in self.X:
             self.scaler(x.reshape(1, -1))
         self.assert_fitness(self.X, self.scaler, self.n_inst)
