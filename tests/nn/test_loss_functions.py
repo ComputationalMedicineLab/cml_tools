@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from cml_tools.neural_net.loss_functions import WGaussianNLLLoss
+from cml_tools.nn.loss_functions import WGaussianNLLLoss
 
 
 class TestWGaussianNLLLoss(unittest.TestCase):

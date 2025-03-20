@@ -7,8 +7,8 @@ import torch
 from torch.utils.data import DataLoader
 from sklearn.preprocessing import StandardScaler
 
-from cml_tools.neural_net.online_norm import OnlineStandardScaler
-from cml_tools.neural_net.testing import TorchTestBase
+from cml_tools.nn.online_norm import OnlineStandardScaler
+from cml_tools.nn.testing import TorchTestBase
 
 
 class TestOnlineStandardScaler(TorchTestBase):
