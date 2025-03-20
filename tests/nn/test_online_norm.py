@@ -8,9 +8,10 @@ from torch.utils.data import DataLoader
 from sklearn.preprocessing import StandardScaler
 
 from cml_tools.neural_net.online_norm import OnlineStandardScaler
+from cml_tools.neural_net.testing import TorchTestBase
 
 
-class TestOnlineStandardScaler(unittest.TestCase):
+class TestOnlineStandardScaler(TorchTestBase):
     def setUp(self):
         self.n_inst = 1024
         self.n_feat = 121
@@ -29,11 +30,11 @@ class TestOnlineStandardScaler(unittest.TestCase):
         self.assertTrue(torch.all(scaler.running_var == 1.0))
         return scaler
 
-    def assert_equality(self, s0, s1):
+    def assert_scalers_equal(self, s0, s1):
         """Check that two scalers are identical"""
-        self.assertTrue(torch.all(s0.running_num == s1.running_num))
-        self.assertTrue(torch.all(s0.running_mean == s1.running_mean))
-        self.assertTrue(torch.all(s0.running_mean == s1.running_mean))
+        self.assert_equal(s0.running_num, s1.running_num)
+        self.assert_equal(s0.running_mean, s1.running_mean)
+        self.assert_equal(s0.running_var, s1.running_var)
 
     def get_var_mean(self, X, nansafe=False):
         if nansafe:
@@ -43,15 +44,12 @@ class TestOnlineStandardScaler(unittest.TestCase):
             v, m = torch.var_mean(X, axis=0, correction=0)
         return v, m
 
-    def assert_torch_close(self, X, Y, atol=1e-8):
-        self.assertTrue(torch.allclose(X, Y, atol=atol, equal_nan=True))
-
     def assert_fitness(self, X, scaler, n, nansafe=False):
         """Check that scaler has been fit correctly to X over n steps"""
         v, m = self.get_var_mean(X, nansafe=nansafe)
-        self.assertTrue(torch.all(scaler.running_num == n))
-        self.assert_torch_close(v, scaler.running_var.clone())
-        self.assert_torch_close(m, scaler.running_mean.clone())
+        self.assert_equal(n, scaler.running_num)
+        self.assert_close(v, scaler.running_var)
+        self.assert_close(m, scaler.running_mean)
         # If nansafe, then Y = scaler(X) mean/variance will be altered by the
         # fill values. So before testing that the results are correctly
         # shifted, set them back to nan
@@ -59,21 +57,18 @@ class TestOnlineStandardScaler(unittest.TestCase):
         Y = scaler(X)
         Y[torch.isnan(X)] = torch.nan
         yv, ym = self.get_var_mean(Y, nansafe=nansafe)
-        self.assert_torch_close(yv, torch.tensor(1.0))
-        # https://pytorch.org/docs/stable/notes/numerical_accuracy.html#numerical-accuracy
-        # XXX: The expected accuracy of single-precision floats is about 7
-        # decimal places. The default atol of torch.allclose is 1e-8; 1e-7 is
-        # usually sufficient (torch.mean(X - torch.mean(X)) is usuallly <
-        # 1e-7). But the test that checks if this works on an
-        # instance-by-instance basis accumulates more error, so that the
-        # threshold needs to be atol=1e-5.
-        self.assert_torch_close(ym, torch.tensor(0.0), atol=1e-5)
+        self.assert_ones(yv)
+        self.assert_zero(ym)
 
     def test_batch_size_one(self):
-        # XXX: see the comment above in assert_fitness
         for x in self.X:
             self.scaler(x.reshape(1, -1))
-        self.assert_fitness(self.X, self.scaler, self.n_inst)
+        v, m = torch.var_mean(self.X, axis=0, correction=0)
+        self.assert_equal(self.scaler.running_num, self.n_inst)
+        self.assert_close(self.scaler.running_var, v)
+        # More error accumulates in the online algo running a single instance
+        # at a time, so that we can't really get better accuracy than this.
+        self.assert_close(self.scaler.running_mean, m, atol=1e-5)
 
     def test_full_batch_size(self):
         for batch in self.X.reshape(self.n_batch, -1, self.n_feat):
@@ -91,7 +86,7 @@ class TestOnlineStandardScaler(unittest.TestCase):
         # They should still be correctly fitted as well as identical
         self.assert_fitness(self.X, scaler0, self.n_inst)
         self.assert_fitness(self.X, scaler1, self.n_inst)
-        self.assert_equality(scaler0, scaler1)
+        self.assert_scalers_equal(scaler0, scaler1)
 
     def test_scaler_stops_training_in_eval(self):
         for batch in self.X.reshape(self.n_batch, -1, self.n_feat):
@@ -103,7 +98,7 @@ class TestOnlineStandardScaler(unittest.TestCase):
         Y = torch.rand(self.n_inst, self.n_feat)
         for batch in Y.reshape(self.n_batch, -1, self.n_feat):
             y_scaled = self.scaler(batch)
-        self.assert_equality(self.scaler, frozen_scaler)
+        self.assert_scalers_equal(self.scaler, frozen_scaler)
 
     def test_scaler_stops_training_if_frozen(self):
         """Test that a frozen scaler won't train even if torch sets #train()"""
@@ -123,7 +118,7 @@ class TestOnlineStandardScaler(unittest.TestCase):
         Y = torch.rand(self.n_inst, self.n_feat)
         for batch in Y.reshape(self.n_batch, -1, self.n_feat):
             self.scaler(batch)
-        self.assert_equality(self.scaler, frozen_scaler)
+        self.assert_scalers_equal(self.scaler, frozen_scaler)
 
     def test_scaler_with_nan_inputs(self):
         fill_nan = 0.0

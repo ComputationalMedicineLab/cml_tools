@@ -73,7 +73,7 @@ class OnlineStandardScaler(nn.Module):
             M[nan_mask] = self.running_mean[nan_mask]
             V[nan_mask] = self.running_var[nan_mask]
             # Clip the variances to avoid division by very small numbers
-            V = torch.clip(V, min=self.eps)
+            V.clamp_(min=self.eps)
             # Copy the results back into the module buffers
             self.running_num.copy_(N)
             self.running_var.copy_(V)
