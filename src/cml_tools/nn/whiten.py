@@ -39,36 +39,51 @@ def cov_mean(X, block_size=None, eps=None):
     return C, m
 
 
-def apply_whitening(Y, K, X_mean, inplace=True):
+def apply_whitening(Y, K, X_mean, inplace=True, out=None):
     """
-    Computes K(Y - X_mean), for K and X_mean learned from some other matrix X.
+    Computes the transformation `K(Y - X_mean)`, for `K` and `X_mean` learned
+    from (a potentially different) matrix `X`.
+
+    Arguments
+    ---------
+    Y : Tensor of shape (n, m)
+    K : Tensor of shape (c, n)
+    X_mean: Tensor of shape (n, 1)
+    out : Tensor of shape (c, m)
+        For number `n` of features, number `m` of samples (observations), and
+        number `c` of components down to which to project `Y`.
     """
     assert X_mean.shape == (len(Y), 1)
     if inplace:
         Y.sub_(X_mean)
     else:
         Y = (Y - X_mean)
-    return torch.matmul(K, Y)
+    return torch.matmul(K, Y, out=out)
 
 
-@torch.no_grad()
-def learn_whitening(X, n_component=None, component_thresh=None, inplace=True,
-                    eps=None):
-    """
+def learn_whitening(X, n_component=None, component_thresh=None, apply=True,
+                    inplace=True, out=None, eps=None):
+    """Batch learns a whitening matrix for X.
+
     A zero-mean random vector `z` is said to be "white" if its elements `z[i]`
     are uncorrelated and have unit variances. A whitening transformation for a
-    random vector `x` is a linear operator `V` such that `z = Vx` and `z` is
-    white. This function fits a linear transformation `V` to a matrix of
+    random vector `x` is a linear operator `K` such that `z = Vx` and `z` is
+    white. This function fits a linear transformation `K` to a matrix of
     observations of `x`. The elements of `x` (the features) are the row
     dimension; the observations of `x` (the samples) are the column dimension;
     it is assumed therefore that `X.shape[0]` will usually be much larger than
     `X.shape[1]`.
 
     Let `E` be the eigenvector matrix and `D` the diagonal matrix of
-    eigenvalues of the covariance matrix of `X`. Then `V = D^{-1/2}E^T` is a
+    eigenvalues of the covariance matrix of `X`. Then `K = D^{-1/2}E^T` is a
     whitening matrix for `X`.
+
+    We furthermore sort `K` by the magnitude of the singular vals `D^{1/2}`. If
+    `n_component` is given, we select the top `n_component` rows of `K`; if
+    `n_component is None` and `component_thresh` is given, we select as many
+    rows as have corresponding singular vals greater than or equal to
+    `component_thresh`.
     """
-    # XXX: implement keyword argument such as `decomposition='svd'`?
     if not eps or eps < 0:
         eps = torch.finfo(X.dtype).eps
 
@@ -85,10 +100,10 @@ def learn_whitening(X, n_component=None, component_thresh=None, inplace=True,
     svals.sqrt_()
     ecols.mul_(ecols[0].sgn())
     ecols.div_(svals)
-    # Reverse and transpose the eigencolumns, then choose the top
-    # `n_components` to acquire `K`, our whitening matrix. If `n_components` is
-    # not specified as a positive integer but `component_thresh` is a positive
-    # number, we choose as many as have singular vals (= sqrt(eigenvals)) above
+    # Reverse and transpose the eigencolumns, then choose the top `n_component`
+    # to acquire `K`, our whitening matrix. If `n_component` is not specified
+    # as a positive integer but `component_thresh` is a positive number, we
+    # choose as many as have singular vals (= sqrt(eigenvals)) above
     # `component_thresh`.
     if n_component is None:
         if (n_component := torch.sum(svals >= component_thresh)) < 1:
@@ -96,5 +111,7 @@ def learn_whitening(X, n_component=None, component_thresh=None, inplace=True,
     indices = torch.argsort(svals, descending=True)
     indices = indices[:n_component]
     K = (ecols[:, indices]).t_()
-    X1 = apply_whitening(X, K, mx, inplace=inplace)
-    return X1, K, mx
+    if apply:
+        X1 = apply_whitening(X, K, mx, inplace=inplace, out=out)
+        return X1, K, mx
+    return K, mx
