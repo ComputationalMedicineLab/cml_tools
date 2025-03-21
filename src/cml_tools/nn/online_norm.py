@@ -39,7 +39,14 @@ class OnlineStandardScaler(nn.Module):
             f'fill_nan={self.fill_nan}, frozen={self.frozen}'
         )
 
+    def set_running_stats(self, mean, var, n):
+        """Directly set the running stats from external sources"""
+        self.running_mean.copy_(mean)
+        self.running_var.copy_(var)
+        self.running_num.copy_(n)
+
     def reset_running_stats(self):
+        """Reset the running stats to baseline values"""
         self.running_mean.zero_(0)
         self.running_var.copy_(1)
         self.running_num.zero_(0)
@@ -80,6 +87,7 @@ class OnlineStandardScaler(nn.Module):
             self.running_mean.copy_(M)
 
     def apply_stats(self, batch):
+        """Scale batch features to Standard Normal using learned stats"""
         out = (batch - self.running_mean) / torch.sqrt(self.running_var)
         if self.fill_nan is None:
             return out

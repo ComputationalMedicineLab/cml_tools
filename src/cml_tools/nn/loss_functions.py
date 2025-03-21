@@ -48,8 +48,12 @@ class WGaussianNLLLoss(nn.Module):
         with torch.no_grad():
             var.clamp_(min=self.eps)
 
-        err = torch.square(mean - target)
-        loss = 0.5 * (self.alpha*torch.log(var) + self.beta*(err/var))
+        ### Compute the following but (mostly) inplace:
+        # err = torch.square(mean - target)
+        # loss = 0.5 * (self.alpha*torch.log(var) + self.beta*(err/var))
+        loss = (mean - target).square_().div_(var).mul_(self.beta)
+        loss.add_(var.log_().mul_(self.alpha)).mul_(0.5)
+
         if self.full:
             loss += self._constant
 
