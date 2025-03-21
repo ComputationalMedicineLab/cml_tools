@@ -39,7 +39,7 @@ def cov_mean(X, block_size=None, eps=None):
     return C, m
 
 
-def apply_whitening(Y, K, X_mean, inplace=True, out=None):
+def apply_whitening(Y, K, X_mean, out=None):
     """
     Computes the transformation `K(Y - X_mean)`, for `K` and `X_mean` learned
     from (a potentially different) matrix `X`.
@@ -54,15 +54,16 @@ def apply_whitening(Y, K, X_mean, inplace=True, out=None):
         number `c` of components down to which to project `Y`.
     """
     assert X_mean.shape == (len(Y), 1)
-    if inplace:
-        Y.sub_(X_mean)
-    else:
-        Y = (Y - X_mean)
-    return torch.matmul(K, Y, out=out)
+    assert Y.shape[0] == K.shape[1]
+    # For practical purposes we compute (K @ Y) - (K @ X_mean); this way we
+    # don't have to mutate Y and only need X_mean.shape additional storage
+    if out is None:
+        out = torch.empty(K.shape[0], Y.shape[1], dtype=Y.dtype)
+    return torch.matmul(K, Y, out=out).sub_(K @ X_mean)
 
 
 def learn_whitening(X, n_component=None, component_thresh=None, apply=True,
-                    inplace=True, out=None, eps=None):
+                    out=None, eps=None):
     """Batch learns a whitening matrix for X.
 
     A zero-mean random vector `z` is said to be "white" if its elements `z[i]`
@@ -117,6 +118,6 @@ def learn_whitening(X, n_component=None, component_thresh=None, apply=True,
     indices = indices[:n_component]
     K = (ecols[:, indices]).t_()
     if apply:
-        X1 = apply_whitening(X, K, mx, inplace=inplace, out=out)
+        X1 = apply_whitening(X, K, mx, out=out)
         return X1, K, mx
     return K, mx

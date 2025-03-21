@@ -67,8 +67,11 @@ class TestOnlineStandardScaler(TorchTestBase):
         self.assert_equal(self.scaler.running_num, self.n_inst)
         self.assert_close(self.scaler.running_var, v)
         # More error accumulates in the online algo running a single instance
-        # at a time, so that we can't really get better accuracy than this.
-        self.assert_close(self.scaler.running_mean, m, atol=1e-5)
+        # at a time, so that we can't really get better accuracy than this if
+        # the dtype is float32. Might need dtype specific tests :(
+        #self.assert_close(self.scaler.running_mean, m, atol=1e-5)
+        # This passes because we assume torch.float64
+        self.assert_close(self.scaler.running_mean, m)
 
     def test_full_batch_size(self):
         for batch in self.X.reshape(self.n_batch, -1, self.n_feat):

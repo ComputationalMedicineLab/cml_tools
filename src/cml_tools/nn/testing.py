@@ -6,6 +6,11 @@ from torch import allclose
 
 
 class TorchTestBase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        torch.set_default_dtype(torch.float64)
+        torch.set_default_device('cpu')
+
     # https://pytorch.org/docs/stable/notes/numerical_accuracy.html#numerical-accuracy
     # XXX: The expected accuracy of single-precision floats is about 7 decimal
     # places. The default atol of torch.allclose is 1e-8; 1e-7 is usually
