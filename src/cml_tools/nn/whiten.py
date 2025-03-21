@@ -24,18 +24,13 @@ def cov_mean(X, block_size=None, eps=None):
         eps = torch.finfo(X.dtype).eps
 
     m = torch.mean(X, axis=1, keepdim=True)
-    if torch.all(m <= eps):
-        C = torch.zeros(len(X), len(X), dtype=X.dtype)
-    else:
-        C = torch.matmul(m, m.T).mul_(-n_samples)
-
+    C = torch.zeros(len(X), len(X), dtype=X.dtype)
     n_blocks, rem = divmod(n_samples, block_size)
     n_blocks += int(rem > 0)
     for i in range(n_blocks):
         Xb = X[:, i*block_size:(i+1)*block_size]
         torch.addmm(C, Xb, Xb.T, out=C)
-    C.div_(n_samples)
-
+    torch.addmm(C, m, m.T, beta=(1.0/n_samples), alpha=(-1.0), out=C)
     return C, m
 
 

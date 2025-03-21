@@ -21,5 +21,14 @@ tests:
 	@echo
 	@python -m unittest discover tests -v
 
+tests-float32:
+	@echo -n 'Checking cml_tools is installed: version '
+	@python -c 'import cml_tools;print(cml_tools.__version__)'
+	@echo
+	@echo 'Run an individual test file by invoking it as a module, e.g.'
+	@echo '    python -m tests.test_online_norm -v'
+	@echo
+	@DTYPE=float python -m unittest discover tests -v
+
 sync:
 	rsync -avzP --exclude='__pycache__' --exclude='*pyc' $(shell pwd) /clio/projects --delete

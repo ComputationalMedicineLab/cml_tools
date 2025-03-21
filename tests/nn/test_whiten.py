@@ -40,24 +40,17 @@ class TestWhitening(TorchTestBase):
         self.assertEqual(self.K.shape, (self.n_component, self.n_features))
         self.assertEqual(self.X_mean.shape, (self.n_features, 1))
 
-#    def test_inplace(self):
-#        # Check that X is or is not mutated based on keyword arg "inplace"
-#        with self.subTest(inplace=True):
-#            X = torch.rand(self.n_features, self.n_samples)
-#            self.run_whiten(X, inplace=True)
-#            self.assert_zero(torch.mean(X, axis=1))
-#        with self.subTest(inplace=False):
-#            X = torch.rand(self.n_features, self.n_samples)
-#            self.run_whiten(X, inplace=False)
-#            self.assert_equal(self.X_mean, torch.mean(X, axis=1, keepdim=True))
-#            self.assert_equal(self.X_orig, X)
-
     def test_X1_is_whitened(self):
+        # XXX: need a definitive answer as to whether this atol can be improved
+        # in the 32-bit precision case (or maybe its an acceptable atol).
+        match self.X1.dtype:
+            case torch.float64: atol = 1e-8
+            case torch.float32: atol = 5e-6
         # X1 is white if centered and cov(X) == I
-        self.assert_zero(torch.mean(self.X1, axis=1))
+        self.assert_zero(torch.mean(self.X1, axis=1), atol=atol)
         X1_cov = torch.cov(self.X1, correction=0)
         X1_eye = torch.eye(self.n_component)
-        self.assert_close(X1_cov, X1_eye)
+        self.assert_close(X1_cov, X1_eye, atol=atol)
 
     def test_adaptive_n_components(self):
         X = torch.rand(self.n_features, self.n_samples)
