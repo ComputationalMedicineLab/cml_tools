@@ -75,6 +75,26 @@ class TestWhitening(TorchTestBase):
                 self.assertIn(len(self.X1), (n-1, n, n+1))
                 self.assertIn(len(self.K), (n-1, n, n+1))
 
+    def test_recover_all_components(self):
+        X = torch.rand(self.n_features, self.n_samples)
+        # If component_thresh is zero we should recover all components
+        # If n_component == len(X) we should recover all components
+        for (thresh, n) in ((0.0, None), (None, len(X))):
+            with self.subTest(thresh=0, n=self.n_features):
+                self.run_whiten(torch.clone(X), n_component=n,
+                                component_thresh=thresh, eps=1e-8)
+                self.assertEqual(len(self.X1), self.n_features)
+                self.assertEqual(len(self.K), self.n_features)
+
+    def test_recover_no_components(self):
+        X = torch.rand(self.n_features, self.n_samples)
+        with self.assertRaises(ValueError):
+            learn_whitening(X, n_component=None, component_thresh=None)
+        with self.assertRaises(RuntimeError):
+            learn_whitening(X, n_component=None, component_thresh=1e+6)
+        with self.assertRaises(ValueError):
+            learn_whitening(X, n_component=0, component_thresh=None)
+
     # This should work, in theory, but... doesn't. Boo.
     @unittest.skip('Fix me!')
     def test_projecting_X1_through_K_inv_recovers_X(self):

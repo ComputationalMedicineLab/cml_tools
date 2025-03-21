@@ -84,6 +84,11 @@ def learn_whitening(X, n_component=None, component_thresh=None, apply=True,
     rows as have corresponding singular vals greater than or equal to
     `component_thresh`.
     """
+    if n_component is None and component_thresh is None:
+        raise ValueError('must provide one of n_component or component_thresh')
+    elif component_thresh is None and n_component < 1:
+        raise ValueError('n_component must be nonzero positive or -1')
+
     if not eps or eps < 0:
         eps = torch.finfo(X.dtype).eps
 
