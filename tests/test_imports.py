@@ -5,7 +5,10 @@ class TestImports(unittest.TestCase):
     def test_imports(self):
         try:
             import cml_tools
+            import cml_tools.fastica
             import cml_tools.online_norm
+            import cml_tools.testing
+            import cml_tools.whiten
 
             import cml_tools.plot
             import cml_tools.plot.ehr_counts
@@ -17,9 +20,7 @@ class TestImports(unittest.TestCase):
             import cml_tools.nn.loss_functions
             import cml_tools.nn.modules
             import cml_tools.nn.online_norm
-            import cml_tools.nn.testing
             import cml_tools.nn.trainers
-            import cml_tools.nn.whiten
         except ImportError as exc:
             raise self.failureException from exc
 

@@ -6,6 +6,15 @@ import torch
 from torch import allclose
 
 
+# This appears to prevents a very bizarre "illegal instruction" error that
+# seems to happen whenever the first call to `torch.tanh` in a given process is
+# on a sufficiently large tensor. By putting this here I make sure that the
+# first call to `torch.tanh` in any subclass of TorchTestBase happens when
+# TorchTestBase is imported and not inside any subclass's test function.
+# https://github.com/pytorch/pytorch/issues/149156#issue-2918418704
+torch.tanh(torch.tensor(1))
+
+
 class TorchTestBase(unittest.TestCase):
     # https://pytorch.org/docs/stable/notes/numerical_accuracy.html#numerical-accuracy
     @classmethod

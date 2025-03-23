@@ -4,8 +4,8 @@ import torch
 import torch.nn
 import torch.nn.functional as F
 
-from cml_tools.nn.testing import TorchTestBase
-from cml_tools.nn.whiten import apply_whitening, cov_mean, learn_whitening
+from cml_tools.testing import TorchTestBase
+from cml_tools.whiten import apply_whitening, cov_mean, learn_whitening
 
 
 class TestWhitening(TorchTestBase):
