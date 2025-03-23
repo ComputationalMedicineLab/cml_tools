@@ -1,6 +1,8 @@
 # Project Makefile
 .PHONY: clean-pyc uninstall-e install-e tests sync
 
+all: clean-pyc install-e
+
 clean-pyc:
 	find . -type d -name "__pycache__" -exec rm -r {} +
 	find . -type f -name "*.py[co]" -exec rm {} +
@@ -19,7 +21,7 @@ tests:
 	@echo 'Run an individual test file by invoking it as a module, e.g.'
 	@echo '    python -m tests.test_online_norm -v'
 	@echo
-	@python -m unittest discover tests -v
+	@python -m unittest discover src/cml_tests -v
 
 tests-float32:
 	@echo -n 'Checking cml_tools is installed: version '
@@ -28,7 +30,7 @@ tests-float32:
 	@echo 'Run an individual test file by invoking it as a module, e.g.'
 	@echo '    python -m tests.test_online_norm -v'
 	@echo
-	@DTYPE=float python -m unittest discover tests -v
+	@DTYPE=float python -m unittest discover src/cml_tests -v
 
 sync:
 	rsync -avzP --exclude='__pycache__' --exclude='*pyc' $(shell pwd) /clio/projects --delete

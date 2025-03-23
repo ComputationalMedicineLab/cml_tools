@@ -111,7 +111,7 @@ def update(prev, curr):
     V = (pv * pf) + (cv * cf) + (pf * cf * dx * dx)
 
     # Mask out prev values not in current (i.e. unchanged vals)
-    prev_mask = numpy.ones_like(prev_channels, dtype=numpy.bool)
+    prev_mask = numpy.ones_like(prev_channels, dtype=bool)
     prev_mask[prev_idx] = False
 
     C0 = prev_channels[prev_mask]
@@ -120,7 +120,7 @@ def update(prev, curr):
     N0 = prev_n[prev_mask]
 
     # Mask out curr values not in prev (i.e. brand new vals)
-    curr_mask = numpy.ones_like(curr_channels, dtype=numpy.bool)
+    curr_mask = numpy.ones_like(curr_channels, dtype=bool)
     curr_mask[curr_idx] = False
 
     C1 = curr_channels[curr_mask]
