@@ -1,0 +1,16 @@
+name: cml_tools
+channels:
+    - conda-forge
+    - https://software.repos.intel.com/python/conda/
+    - nodefaults
+dependencies:
+    - libblas=*=*mkl
+    - python=3.12
+    - pip
+    - setuptools
+    - wheel
+    - gcc
+    - gxx
+    - ninja
+    - cmake
+    - pkg-config
