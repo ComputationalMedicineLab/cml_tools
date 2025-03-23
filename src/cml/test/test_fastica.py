@@ -11,12 +11,12 @@ from scipy import signal
 from sklearn.decomposition import _fastica as sk_fastica
 
 
-from cml_tools.fastica import (
+from cml.fastica import (
     apply_g, apply_model, decorr_W, fastica, max_change, recover_A_from_WK,
     recover_S_from_WX1, scale_to_unit_variance, update_W
 )
-from cml_tools.testing import TorchTestBase
-from cml_tools.whiten import apply_whitening, cov_mean, learn_whitening
+from cml.test.base import TorchTestBase
+from cml.whiten import apply_whitening, cov_mean, learn_whitening
 
 
 class TestSignalReconstruction(TorchTestBase):

@@ -21,4 +21,4 @@ classifiers = [
 #license-files = ["LICENSE"]
 
 [project.scripts]
-fastica = 'cml_scripts.fastica:cli'
+fastica = 'cml.script.fastica:cli'

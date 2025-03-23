@@ -3,7 +3,7 @@ import unittest
 import numpy
 import pandas
 
-from cml_tools.online_norm import to_dataframe, to_stats, update
+from cml.online_norm import to_dataframe, to_stats, update
 
 
 class OnlineNormTestCase(unittest.TestCase):

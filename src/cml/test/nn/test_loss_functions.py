@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from cml_tools.nn.loss_functions import WGaussianNLLLoss
+from cml.nn.loss_functions import WGaussianNLLLoss
 
 
 class TestWGaussianNLLLoss(unittest.TestCase):

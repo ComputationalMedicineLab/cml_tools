@@ -7,9 +7,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from cml_tools.fastica import (apply_model, fastica, recover_S_from_WX1,
-                               recover_A_from_WK, scale_to_unit_variance)
-from cml_tools.whiten import apply_whitening, learn_whitening
+from cml.fastica import (apply_model, fastica, recover_S_from_WX1,
+                         recover_A_from_WK, scale_to_unit_variance)
+from cml.whiten import apply_whitening, learn_whitening
 
 # The version of this fastica command line tool
 __version__ = '2025.03'

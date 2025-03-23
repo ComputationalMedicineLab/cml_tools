@@ -7,10 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from cml_tools.whiten import apply_whitening
-
-# See ./testing.py for why this is here. tanh is (usually) critical to fastica
-torch.tanh(torch.tensor(0))
+from cml.whiten import apply_whitening
 
 
 def apply_g(gX, gdv, tmpv=None, ones=None, batch_size=1):
