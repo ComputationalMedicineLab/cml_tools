@@ -19,3 +19,6 @@ classifiers = [
 # Neither seems to work?
 #license = "MIT"
 #license-files = ["LICENSE"]
+
+[project.scripts]
+fastica = 'cml_scripts.fastica:cli'

@@ -11,7 +11,7 @@ uninstall-e:
 	pip uninstall -y cml-tools
 	rm -rf src/*.egg-info
 
-install-e:
+install-e: clean-pyc uninstall-e
 	pip install --editable .
 
 tests:

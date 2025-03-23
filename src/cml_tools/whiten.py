@@ -1,3 +1,5 @@
+import logging
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -49,7 +51,7 @@ def apply_whitening(Y, K, X_mean, out=None):
         number `c` of components down to which to project `Y`.
     """
     assert X_mean.shape == (len(Y), 1)
-    assert Y.shape[0] == K.shape[1]
+    assert K.shape[1] == Y.shape[0]
     # For practical purposes we compute (K @ Y) - (K @ X_mean); this way we
     # don't have to mutate Y and only need X_mean.shape additional storage
     if out is None:
@@ -85,11 +87,16 @@ def learn_whitening(X, n_component=None, component_thresh=None, apply=True,
     elif component_thresh is None and n_component < 1:
         raise ValueError('n_component must be nonzero positive or -1')
 
+    log = logging.getLogger('whiten')
+    log.info('Processing data matrix of shape [%d, %d]', X.shape[0], X.shape[1])
+
     if not eps or eps < 0:
         eps = torch.finfo(X.dtype).eps
 
     # Get whitening matrix from the eigh decomposition
+    log.info('Calculating the Covariance and Mean of X')
     Cx, mx = cov_mean(X)
+    log.info('Seeking the eigenvalues from Cov(X) (= X@X.T)')
     svals, ecols = torch.linalg.eigh(Cx)
     # The eigenvalues and corresponding eigenvectors returned by `eigh` are in
     # *ascending* order. We get the singular values from the eigenvalues, then
@@ -109,10 +116,15 @@ def learn_whitening(X, n_component=None, component_thresh=None, apply=True,
     if n_component is None:
         if (n_component := torch.sum(svals >= component_thresh)) < 1:
             raise RuntimeError(f'Invalid {n_component=}; {component_thresh=}')
+        log.info(f'Whiten: {n_component} eigvals > {component_thresh}')
+        log.info(f'Whiten: final n_component = {n_component}')
     indices = torch.argsort(svals, descending=True)
     indices = indices[:n_component]
     K = (ecols[:, indices]).t_()
     if apply:
+        log.info('Whiten projecting X1 = K(X - X_mean)')
         X1 = apply_whitening(X, K, mx, out=out)
+        log.info('Whiten completed: X1 is of shape [%d, %d]',
+                 X1.shape[0], X1.shape[1])
         return X1, K, mx
     return K, mx
