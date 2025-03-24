@@ -1,8 +1,8 @@
 """
-Many EHR concept taxonomies use codes which are numeric or otherwise
-non-semantic, but code names which are lengthy (sometimes very lengthy)
-descriptions. The purpose of the functions in this module are to produce short,
-easily legible labels from such code names.
+Many EHR concept vocabularies use codes which are numeric or otherwise not
+semantically meaningful, but have code names which are lengthy (sometimes very
+lengthy) descriptions. The purpose of this module is to produce shorter labels
+from such code names for e.g., plotting.
 """
 import functools
 import re
