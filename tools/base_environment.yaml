@@ -4,7 +4,7 @@ channels:
     - https://software.repos.intel.com/python/conda/
     - nodefaults
 dependencies:
-    - libblas=*=*mkl
+    #- libblas=*=*mkl
     - python=3.12
     - pip
     - setuptools

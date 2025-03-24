@@ -15,7 +15,15 @@ echo 'libblas=*=*mkl' >> "$CONDA_PREFIX/conda-meta/pinned"
 python --version
 pip --version
 pip cache purge
-pip install -r ./requirements.txt
+
+# databricks-sql-connector has numpy pinned at 1.24 for some reason (it doesn't
+# even use numpy), pandas has a similar version cap; there is a PR to fix:
+# https://github.com/databricks/databricks-sql-python/pull/478#issue-2720301221
+# In the meantime, we install databricks-sql-connector first and then upgrade
+# numpy in requirements.txt
+pip install databricks-sql-connector
+pip install --upgrade -r ./requirements.txt
+pip install --upgrade -r ./torch_requirements.txt
 
 # Automatically (un)set environment variables on (de)activate
 mkdir -p "$CONDA_PREFIX/etc/conda/activate.d/"
@@ -23,6 +31,7 @@ mkdir -p "$CONDA_PREFIX/etc/conda/deactivate.d/"
 # Change which of the below is commented as needed for OMP vs KMP installs
 cat kmp_vars.sh > "$CONDA_PREFIX/etc/conda/activate.d/set_vars.sh"
 #cat omp_vars.sh > "$CONDA_PREFIX/etc/conda/activate.d/set_vars.sh"
+cat unset_vars.sh > "$CONDA_PREFIX/etc/conda/deactivate.d/set_vars.sh"
 source "$CONDA_PREFIX/etc/conda/activate.d/set_vars.sh"
 
 # Verify the installations
@@ -33,12 +42,15 @@ MKL_VERBOSE=1 python -c 'import numpy, torch'
 python << EOF
 import cython, numpy, scipy, sklearn, torch
 sep = ("-"*80)+"\n"
-print(f'{sep}Numpy version: {numpy.__version__}')
+print(sep)
 print(numpy.show_config())
-print(f'{sep}Cython version: {cython.__version__}')
-print(f'{sep}scipy version: {scipy.__version__}')
-print(f'{sep}sklearn version: {sklearn.__version__}')
-print(f'{sep}torch version: {torch.__version__}')
+print(sep)
 print(torch.__config__.show())
+print(sep)
+print(f'Numpy version: {numpy.__version__}')
+print(f'Cython version: {cython.__version__}')
+print(f'scipy version: {scipy.__version__}')
+print(f'sklearn version: {sklearn.__version__}')
+print(f'torch version: {torch.__version__}')
 print(sep)
 EOF

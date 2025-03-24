@@ -15,18 +15,6 @@ scikit-learn
 # Database (etc.) tools
 pyodbc
 psycopg2-binary
-databricks-sql-connector
-
-# Pytorch
-# The index URL is for cpu; change 'cpu' to 'cu126' to get CUDA 12.6:
-# --index-url https://download.pytorch.org/whl/cpu
-# --index-url https://download.pytorch.org/whl/cu126
-# Although it doesn't seem to be harmful to just install basic torch et al.
-# from pip without worrying about GPU... pip will install the nvidia libs and
-# they just won't do anything.
-torch
-torchaudio
-torchvision
 
 # Intel Libraries
 mkl
