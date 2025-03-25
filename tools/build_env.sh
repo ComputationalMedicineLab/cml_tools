@@ -1,7 +1,7 @@
 #!/bin/bash
 # If running this script ('./build_env.sh') fails because micromamba cannot be
 # found but micromamba is available from your calling shell, source this script
-# instead ('source build_env.sh').
+# instead ('source build_env.sh'). In either case, run or source from this dir.
 micromamba create -f ./base_environment.yaml
 
 # Activating cml_tools gets correct $CONDA_PREFIX into the script env
@@ -37,20 +37,5 @@ source "$CONDA_PREFIX/etc/conda/activate.d/set_vars.sh"
 # Verify the installations
 # Test if MKL is installed and activated
 MKL_VERBOSE=1 python -c 'import numpy, torch'
-
 # Check versions of major dependencies
-python << EOF
-import cython, numpy, scipy, sklearn, torch
-sep = ("-"*80)+"\n"
-print(sep)
-print(numpy.show_config())
-print(sep)
-print(torch.__config__.show())
-print(sep)
-print(f'Numpy version: {numpy.__version__}')
-print(f'Cython version: {cython.__version__}')
-print(f'scipy version: {scipy.__version__}')
-print(f'sklearn version: {sklearn.__version__}')
-print(f'torch version: {torch.__version__}')
-print(sep)
-EOF
+VERBOSE=1 python ./versions.py
