@@ -1,3 +1,4 @@
+"""The `fastica` command line tool"""
 import argparse
 import logging
 import os
@@ -13,7 +14,7 @@ from cml.whiten import apply_whitening, learn_whitening
 
 # The version of this fastica command line tool
 __version__ = '2025.03'
-torch.tanh(torch.tensor(0))
+
 
 def eps_(t):
     return torch.finfo(t.dtype).eps

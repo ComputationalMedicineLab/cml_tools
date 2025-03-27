@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-def cov_mean(X, block_size=None, eps=None):
+def cov_mean(X, block_size=None):
     """
     Memory efficient and fast computation of cov(X) and E[X]. Equivalent usage:
 
@@ -22,16 +22,25 @@ def cov_mean(X, block_size=None, eps=None):
     else:
         n_samples = X.shape[1]
 
-    if eps is None:
-        eps = torch.finfo(X.dtype).eps
-
     m = torch.mean(X, axis=1, keepdim=True)
     C = torch.zeros(len(X), len(X), dtype=X.dtype)
     n_blocks, rem = divmod(n_samples, block_size)
-    n_blocks += int(rem > 0)
-    for i in range(n_blocks):
-        Xb = X[:, i*block_size:(i+1)*block_size]
-        torch.addmm(C, Xb, Xb.T, out=C)
+
+    # If all goes correctly this will cause the block matrices of X to be
+    # multiplied and accumulated together without any copying or memory use
+    if rem > 0:
+        Xv = X[:, :(n_blocks * block_size)]
+    else:
+        Xv = X
+    Xv = Xv.view(block_size, n_blocks, block_size).swapaxes(0, 1)
+    torch.addbmm(C, Xv, Xv.mT, out=C)
+
+    # In case there's a final block of unequal size to block_size
+    if rem > 0:
+        Xv = X[:, (n_blocks * block_size):]
+        torch.addmm(C, Xv, Xv.T, out=C)
+
+    # out = (beta * C) + (alpha * (m @ m.T))
     torch.addmm(C, m, m.T, beta=(1.0/n_samples), alpha=(-1.0), out=C)
     return C, m
 
@@ -53,7 +62,8 @@ def apply_whitening(Y, K, X_mean, out=None):
     assert X_mean.shape == (len(Y), 1)
     assert K.shape[1] == Y.shape[0]
     # For practical purposes we compute (K @ Y) - (K @ X_mean); this way we
-    # don't have to mutate Y and only need X_mean.shape additional storage
+    # don't have to mutate Y and only need K.shape additional storage (for the
+    # intermediate output of K @ X_mean)
     if out is None:
         out = torch.empty(K.shape[0], Y.shape[1], dtype=Y.dtype)
     return torch.matmul(K, Y, out=out).sub_(K @ X_mean)
@@ -65,7 +75,7 @@ def learn_whitening(X, n_component=None, component_thresh=None, apply=True,
 
     A zero-mean random vector `z` is said to be "white" if its elements `z[i]`
     are uncorrelated and have unit variances. A whitening transformation for a
-    random vector `x` is a linear operator `K` such that `z = Vx` and `z` is
+    random vector `x` is a linear operator `K` such that `z = Kx` and `z` is
     white. This function fits a linear transformation `K` to a matrix of
     observations of `x`. The elements of `x` (the features) are the row
     dimension; the observations of `x` (the samples) are the column dimension;
