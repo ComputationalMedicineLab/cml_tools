@@ -29,9 +29,9 @@ pip install --upgrade -r ./torch_requirements.txt
 mkdir -p "$CONDA_PREFIX/etc/conda/activate.d/"
 mkdir -p "$CONDA_PREFIX/etc/conda/deactivate.d/"
 # Change which of the below is commented as needed for OMP vs KMP installs
-cat kmp_vars.sh > "$CONDA_PREFIX/etc/conda/activate.d/set_vars.sh"
-#cat omp_vars.sh > "$CONDA_PREFIX/etc/conda/activate.d/set_vars.sh"
-cat unset_vars.sh > "$CONDA_PREFIX/etc/conda/deactivate.d/set_vars.sh"
+#cat kmp_vars.sh > "$CONDA_PREFIX/etc/conda/activate.d/set_vars.sh"
+cat omp_vars.sh > "$CONDA_PREFIX/etc/conda/activate.d/set_vars.sh"
+#cat unset_vars.sh > "$CONDA_PREFIX/etc/conda/deactivate.d/set_vars.sh"
 source "$CONDA_PREFIX/etc/conda/activate.d/set_vars.sh"
 
 # Verify the installations
