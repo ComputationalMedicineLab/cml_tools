@@ -15,6 +15,7 @@ scikit-learn
 # Database (etc.) tools
 pyodbc
 psycopg2-binary
+pyarrow
 
 # Intel Libraries
 mkl
