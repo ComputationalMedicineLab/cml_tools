@@ -48,14 +48,16 @@ class WGaussianNLLLoss(nn.Module):
         with torch.no_grad():
             var.clamp_(min=self.eps)
 
-        ### Compute the following but (mostly) inplace:
-        # err = torch.square(mean - target)
-        # loss = 0.5 * (self.alpha*torch.log(var) + self.beta*(err/var))
-        loss = (mean - target).square_().div_(var).mul_(self.beta)
-        loss.add_(var.log_().mul_(self.alpha)).mul_(0.5)
+        # XXX: can't use inplace ops here: since this is a loss function it is
+        # definitely used w. autograd, and inplace can interfere with autograd.
+        # Besides, since it is used with batches the memory savings of inplace
+        # operations would be very minimal, unlike large-array preprocessing
+        # techniques such as whitening or PCA.
+        err = torch.square(mean - target)
+        loss = 0.5 * (self.alpha*torch.log(var) + self.beta*(err/var))
 
         if self.full:
-            loss += self._constant
+            loss = loss + self._constant
 
         match self.reduction:
             case 'mean': return loss.mean()

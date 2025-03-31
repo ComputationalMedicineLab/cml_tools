@@ -12,18 +12,18 @@ import torch.optim as optim
 
 class GaussianTrainer:
     """Class for training models which predict mean and variance"""
-    def __init__(self, model, train_loader, test_loader, optimizer,
-                 gnll_fn=None):
+    def __init__(self, model, optimizer, train_loader, test_loader,
+                 loss_fn=None):
         self.model = model
+        self.optimizer = optimizer
         self.train_loader = train_loader
         self.test_loader = test_loader
-        self.optimizer = optimizer
-        # TODO: need hooks for custom loss implementation: re-weighting the
-        # Gaussian NLL, or adding L1/L2 norm penalties, etc.
-        # The basic PyTorch implementation of GNLL
-        if gnll_fn is None:
-            gnll_fn = nn.GaussianNLLLoss(reduction='none')
-        self.gnll_fn = gnll_fn
+        # If loss_fn is `"model"` then the model is called with each batch
+        # produced by train_loader / test_loader and is expected to return a
+        # triplet (losses, means, variances).
+        if loss_fn is None:
+            loss_fn = nn.GaussianNLLLoss(reduction='none')
+        self.loss_fn = loss_fn
         # Preferred logging options (put somewhere more useful...)
         #       format='%(asctime)s %(name)s %(message)s',
         #       datefmt='%m/%d/%Y %I:%M:%S %p'
@@ -34,18 +34,20 @@ class GaussianTrainer:
         self.log_interval_train = 50
         self.log_interval_test = 50
 
-    def run_batch(self, X, y):
-        X = X.to(torch.float32)
-        y = y.to(torch.float32)
-        means, variances = self.model(X)
-        loss = self.gnll_fn(means, y, variances)
+    def run_batch(self, batch):
+        if self.loss_fn == 'model':
+            loss, means, variances = self.model(*batch)
+        else:
+            X, y = batch
+            means, variances = self.model(X)
+            loss = self.loss_fn(means, y, variances)
         return loss, means, variances
 
     def epoch_train_iter(self, epoch, loader=None):
         loader = loader or self.train_loader
         self.model.train()
-        for batch_num, (X, y) in enumerate(loader):
-            loss, means, variances = self.run_batch(X, y)
+        for batch_num, batch in enumerate(loader):
+            loss, means, variances = self.run_batch(batch)
             yield batch_num, loss.detach(), means.detach(), variances.detach()
             # Backpropagation - XXX I assume the loss is all finite; if not, we
             # never execute this half of the function (the caller handles)
@@ -57,8 +59,8 @@ class GaussianTrainer:
         loader = loader or self.test_loader
         self.model.eval()
         with torch.no_grad():
-            for batch_num, (X, y) in enumerate(loader):
-                loss, means, variances = self.run_batch(X, y)
+            for batch_num, batch in enumerate(loader):
+                loss, means, variances = self.run_batch(batch)
                 # No need to detach, since we are here in no_grad()
                 yield batch_num, loss, means, variances
 
@@ -189,7 +191,7 @@ class GaussianTrainer:
                 best_epoch=best_epoch,
                 best_model=best_model,
                 best_optim=best_optim,
-                gnll_fn=self.gnll_fn,
+                loss_fn=self.loss_fn,
             )
             # Checkpoint, if we're checkpointing every iteration...
             if keep in (True, 1, 'every'):

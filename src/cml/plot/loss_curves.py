@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def plot_epoch_losses(train_loss=None, test_loss=None, *,
+def plot_epoch_losses(train_loss=None, test_loss=None, *, model_id='',
                       reshape=None, agg=np.mean, a_min=None, a_max=None,
                       ax=None, marker='o', alpha=0.25, mark_min=True):
     """
@@ -71,10 +71,10 @@ def plot_epoch_losses(train_loss=None, test_loss=None, *,
             ax.scatter(ys_argmin, ys_min, color='C1', marker='x')
 
     if train_loss is not None:
-        plot_curve(ys0, 'Train')
+        plot_curve(ys0, f'{model_id} Train')
 
     if test_loss is not None:
-        plot_curve(ys1, 'Test')
+        plot_curve(ys1, f'{model_id} Test')
 
     # Get the aggregation function name: if it exists, format it. Set title.
     if (name := getattr(agg, '__name__', '')):
