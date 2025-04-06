@@ -7,7 +7,9 @@ used for storage of the basic EHR pulled from a data source, prior to
 longitudinal curve construction.
 """
 import datetime
-import operator as op
+from collections import namedtuple
+from operator import itemgetter
+
 import numpy as np
 
 core_ehr_dtype = np.dtype([('person_id', np.int64),
@@ -37,16 +39,56 @@ omop_channel_meta_types = (int, str, str, str, str, str, str, float)
 # the OMOP person table (although there exist variations using alternate
 # 'ID'ing strategies for custom de-identification purposes).
 cohort_demographics_header = (
-    'person_id', 'birth_date',
+    'person_id', 'birthdate',
     'gender_concept_id', 'gender_source_value', 'gender_concept_name',
     'race_concept_id', 'race_source_value', 'race_concept_name',
 )
 cohort_demographics_types = (int, datetime.date, int, str, str, int, str, str)
-# These types tuples can be used in automatic conversion from e.g. CSV files.
+
+
+class Person(namedtuple('Person', cohort_demographics_header)):
+    __slots__ = ()
+
+    @classmethod
+    def from_strings(cls, row):
+        return cls(*[f(x) for f, x in zip(cohort_demographics_types, row)])
+
+    @classmethod
+    def from_legacy_df(cls, df):
+        person_id = df.ptid.values[0]
+        # Try to convert to an integer, if the conversion is not lossy
+        if isinstance(person_id, str) and str(int(person_id)) == person_id:
+            person_id = int(person_id)
+
+        birthdate = np.datetime64(df[df['mode'] == 'Age']['value'].values[0])
+
+        # Consult the OMOP Gender domain documentation for the values below
+        gender_source_value = df[df['mode'] == 'Sex']['channel'].values[0]
+        assert isinstance(gender_source_value, str)
+        match gender_source_value.upper():
+            case 'F'|'FEMALE':
+                gender_concept_id = 8532
+                gender_concept_name = 'FEMALE'
+            case 'M'|'MALE':
+                gender_concept_id = 8507
+                gender_concept_name = 'MALE'
+            case _:
+                gender_concept_id = 0
+                gender_concept_name = 'No matching concept'
+
+        # TODO: figure out how to back-map the various mappings we've used for
+        # race. For now, just take the computed race_source_value and stub the
+        # other two fields.
+        race_source_value = df[df['mode'] == 'Race']['channel'].values[0]
+        assert isinstance(race_source_value, str)
+
+        return cls(person_id, birthdate, gender_concept_id,
+                   gender_source_value, gender_concept_name, None,
+                   race_source_value, None)
 
 
 def core_ehr_from_arrow(table):
-    """A constructor for a recarray of core_ehr_dtype from a pyarrow.Table"""
+    """Construct a recarray of core_ehr_dtype from a pyarrow.Table"""
     # We need this b/c using arrow is the only efficient way to get data from
     # databricks-sql-connector, even though arrow itself is... cumbersome.
     return np.rec.fromarrays([
@@ -62,12 +104,74 @@ def core_ehr_from_file(filename):
     return np.rec.array(np.load(filename), dtype=core_ehr_dtype, copy=False)
 
 
-def split_by_person_id(data):
-    """Returns views on data grouped by person_id. data is assumed sorted"""
-    ids, positions = np.unique(data.person_id, return_index=True)
+def core_ehr_from_records(records, sort=True):
+    """Construct a recarray of core_ehr_dtype from a list of tuples"""
+    # sorted should sort stably in field order (person, concept, then date)
+    if sort: records = sorted(records)
+    return np.rec.fromrecords(records, dtype=core_ehr_dtype)
+
+
+def core_ehr_from_legacy_df(df, meta, hash_person_id=True, strict=False):
+    """
+    The old-style storage for patient EHR was in a dataframe with five
+    columns: patient id, date, mode, channel, value. Dates and values were
+    stored as Timestamps and floats; the other three were stored as strings.
+    The numpy dtype is clearly more efficient.
+
+    However, atemporal data modes (such as sex or race demographics) or data
+    modes without dedicated OMOP concept ids (such as age) are captured by the
+    Person tuple rather than a core_ehr_dtype recarray.
+
+    Returns the ehr recarray, a Person tuple, and the mapping used from legacy
+    ('mode', 'channel') pairs of strings to OMOP concept ids.
+    """
+    person = Person.from_legacy_df(df)
+    # The Person class constructor should already have tried type conversion
+    if not isinstance(person_id := person.person_id, int):
+        if hash_person_id:
+            # XXX: do I need to use a np func to make sure the dtype fits?
+            person_id = hash(person_id)
+        elif strict:
+            raise ValueError(f'Cannot coerce {person_id=} to integer')
+        else:
+            person_id = 0.0
+
+    # Exclude age, sex, race, then get the channel to concepts map, if any are
+    # missing then based on `strict` we bail, otherwise ignore.
+    data = df[~np.isin(df['mode'].str.lower(), ('age', 'sex', 'race'))]
+    channels = set(map(tuple, data[['mode', 'channel']].to_numpy()))
+    to_concepts = map_channels_to_concept_ids(channels, meta)
+
+    if strict and len(channels) != len(to_concepts):
+        missing = [x for x in channels if x not in to_concepts]
+        raise ValueError(f'Unable to map {missing=} to OMOP concepts')
+
+    records = []
+    for t in data.itertuples():
+        key = (t.mode, t.channel)
+        if (concept := to_concepts.get(key)) is not None:
+            records.append((person_id, concept, t.date, t.value))
+    ehr = core_ehr_from_records(records, sort=True)
+    return ehr, person, to_concepts
+
+
+def _split_by_field(data, field, assume_sorted=True):
+    if not assume_sorted:
+        data = data[np.argsort(data[field])]
+    ids, positions = np.unique(data[field], return_index=True)
     groups = np.split(data, positions[1:])
     assert sum(len(x) for x in groups) == len(data)
-    return groups
+    return groups, ids, positions
+
+
+def split_by_person_id(data, assume_sorted=True):
+    """Returns views on data grouped by person_id"""
+    return _split_by_field(data, 'person_id', assume_sorted=assume_sorted)
+
+
+def split_by_concept_id(data, assume_sorted=True):
+    """Returns views on data grouped by concept_id"""
+    return _split_by_field(data, 'concept_id', assume_sorted=assume_sorted)
 
 
 def make_concept_map(data, keys=None, header=None):
@@ -85,7 +189,7 @@ def make_concept_map(data, keys=None, header=None):
     if header is None:
         header, *data = data
     concept_idx = header.index('concept_id')
-    extract_row = op.itemgetter(*(header.index(k) for k in keys))
+    extract_row = itemgetter(*(header.index(k) for k in keys))
     return {row[concept_idx]: extract_row(row) for row in data}
 
 

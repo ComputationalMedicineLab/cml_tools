@@ -8,6 +8,8 @@ matplotlib
 seaborn
 jupyter
 ipython
+bottleneck
+line_profiler
 
 # Scikit-learn
 scikit-learn
