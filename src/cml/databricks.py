@@ -6,84 +6,65 @@ import os
 import pickle
 
 from databricks import sql as dbsql
+import pyarrow.parquet as pq
 
 
-def convert(x):
-    """Convert or modify types as needed, else identity"""
-    match type(x):
-        # the sql lib will spuriously attach a timezone
-        case datetime.datetime: return x.replace(tzinfo=None)
-        # We usually want to operate on basic floats
-        case decimal.Decimal: return float(x)
-        case _: return x
+def _validate_connection_opts(opts: dict):
+    # Quick and dirty argument validation
+    assert len(opts) == 3, opts.keys()
+    for key in ('server_hostname', 'http_path', 'access_token'):
+        assert isinstance(opts.get(key), str)
 
 
-def row_factory(row, convert=convert):
-    """Convert the elements of `row` using function `convert`"""
-    return tuple(convert(x) for x in row)
-
-
-def select(cursor, sql: str, batchsize=4096, row_factory=row_factory):
-    """Generator through the result set of a sql SELECT query"""
-    cursor.execute(sql)
-    tuples = cursor.fetchmany(batchsize)
-    while tuples:
-        yield from (row_factory(r) for r in tuples)
-        tuples = cursor.fetchmany(batchsize)
-
-
-def _validate_conn_opt(opts: dict):
-    assert 'server_hostname' in opts
-    assert 'http_path' in opts
-    assert 'access_token' in opts
-
-
-def select_ctx(sql: str, conn_opt: dict, select_opt: dict = None):
-    """Yield SELECT results with connection and cursor context"""
-    _validate_conn_opt(conn_opt)
-    if select_opt is None: select_opt = {}
-    with dbsql.connect(**conn_opt) as connection:
-        with connection.cursor() as cursor:
-            yield from select(cursor, sql, **select_opt)
-
-
-def pickle_select(outfile: str|os.PathLike,
-                  sql: str,
-                  conn_opt: dict[str, str],
-                  select_opt: dict[str, object] = None,
-                  header: object = None,
-                  consume: bool = True):
+def select_arrow(select_statement: str,
+                 conn_opts: dict[str, str],
+                 arraysize: int = 100_000,
+                 combine_chunks: bool = True,
+                 pq_file: str = None):
     """
-    Arguments
-    ---------
-    outfile: str|os.PathLike
-        The output file into which to pickle the results.
-    sql: str
-        The SQL containing the select statement to run.
-    conn_opt: dict[str, str]
-        A dictionary with keyword args for the databricks.sql.connect function
-    select_opt: dict[str, object]
-        A dictionary with keyword arguments for the function `select`
-    header: object
-        Any object to serialize to the outputs before the SQL result set
-    consume: bool
-        If True, read all the results at once and serialize as a single list.
-        Else serialize each result as it comes (the output file is then a
-        pickle stream, rather than a single serialized object).
+    Run a SELECT statement and greedily `fetchall_arrow()` the results. The
+    arrow format is significantly more memory efficient than the sql
+    connector's Row class, so this often is the fastest and most efficient way
+    to pull very large datasets from databricks.
     """
-    _validate_conn_opt(conn_opt)
+    _validate_connection_opts(conn_opts)
 
-    results = []
-    if header is not None:
-        results.append(header)
+    with dbsql.connect(**conn_opts) as connection:
+        with connection.cursor(arraysize=arraysize) as cursor:
+            cursor.execute(select_statement)
+            results = cursor.fetchall_arrow()
 
-    if consume:
-        results.extend(select_ctx(sql, conn_opt, select_opt))
+    if combine_chunks:
+        results = results.combine_chunks()
+
+    if isinstance(pq_file, str):
+        pq.write_table(results, pq_file)
+
+    return results
+
+
+def select_python(select_statement: str,
+                  conn_opts: dict[str, str],
+                  arraysize: int = 100_000,
+                  include_header: bool = True,
+                  convert_tuples: bool = True,
+                  outfile: str|os.PathLike = None):
+    """
+    Run a SELECT statement and greedily `fetchall()` the results. Not suitable
+    for very large result sets; use `select_arrow` or stream the results with a
+    loop over `fetchmany()`.
+    """
+    _validate_connection_opts(conn_opts)
+    with dbsql.connect(**conn_opts) as connection:
+        with connection.cursor(arraysize=arraysize) as cursor:
+            cursor.execute(select_statement)
+            header = tuple(name for (name, *_) in cursor.description)
+            result = cursor.fetchall()
+    if include_header:
+        result.insert(0, header)
+    if convert_tuples:
+        result = tuple(tuple(r) for r in result)
+    if outfile is not None:
         with open(outfile, 'wb') as file:
-            pickle.dump(results, file, protocol=pickle.HIGHEST_PROTOCOL)
-    else:
-        with open(outfile, 'wb') as file:
-            for row in results:
-                pickle.dump(row, file, protocol=pickle.HIGHEST_PROTOCOL)
-            for row in select_ctx(sql, conn_opt, select_opt):
-                pickle.dump(row, file, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(result, file, protocol=pickle.HIGHEST_PROTOCOL)
+    return header, result
