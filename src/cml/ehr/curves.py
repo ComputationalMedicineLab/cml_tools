@@ -12,7 +12,8 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
                      legacy_meds=True, **opts):
     """
     A function for applying our most standard curve construction configuration
-    in an optimized manner.
+    in an optimized manner (approx. 1/10 the time of the cml_data_tools.curves
+    suite of tools).
 
     Curves are interpolated at daily resolution from the earliest the latest
     date given by the patient EHR, optionally extended or truncated by `start`
@@ -26,21 +27,13 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
     "fuzz window" of 365. Please see `cml.time_curves` for details of these
     functions.
 
-    Returns a dictionary with keys `("curves", "grid", "concepts")`. The curves
-    are a double-precision ndarray of dimension `[len(concepts), len(grid)]`
-    (note that this is the tranpose of the old-style curves dataframes). The
-    grid is an ndarray of dtype('<M8[D]') (equiv. to `datetime.date`) from the
-    first to the final date in the patient EHR. The concepts is an ndarray in
-    sorted order of the unique integer concept IDs corresponding to the columns
-    of the curves.
-
-    Notice that the output makes no reference to the patient's person_id. The
-    caller must annotate the output with patient identifiers if that desired:
-
-    >>> out = build_ehr_curves(data, meta)
-    >>> out['person_id'] = data.person_id[0]
-    >>> # or maybe, if you have a cml.ehr.dtypes.Person tuple laying around,
-    >>> out['person'] = Person(*person_tuple)
+    Returns a dictionary with keys `("person_id", "curves", "grid",
+    "concepts")`. The curves are a double-precision ndarray of dimension
+    `[len(concepts), len(grid)]` (note that this is the tranpose of the
+    old-style curves dataframes). The grid is an ndarray of dtype('<M8[D]')
+    (equiv. to `datetime.date`) from the first to the final date in the patient
+    EHR. The concepts is an ndarray in sorted order of the unique integer
+    concept IDs corresponding to the columns of the curves.
     """
     # TODO: think about how best to handle non-daily resolution or alternate
     # curve functions. Probably the best combination of legibility and
@@ -65,6 +58,7 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
 
     modes = make_concept_map(meta)
     grid = patient_date_range(data, start=start, until=until)
+    pid = int(data.person_id[0])
 
     # If either start or until is not None then the limits of the grid may not
     # coincide with the limits of the patient data; we may need to shrink the
@@ -101,7 +95,7 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
             case _:
                 continue
         curves[i] = x
-    return dict(curves=curves, grid=grid, concepts=concepts)
+    return dict(person_id=pid, curves=curves, grid=grid, concepts=concepts)
 
 
 def legacy_curve_gen(data, start=None, until=None, window=365, validate=False,

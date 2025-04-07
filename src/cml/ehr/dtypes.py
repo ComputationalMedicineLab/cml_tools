@@ -7,6 +7,7 @@ used for storage of the basic EHR pulled from a data source, prior to
 longitudinal curve construction.
 """
 import datetime
+import pickle
 from collections import namedtuple
 from operator import itemgetter
 
@@ -85,6 +86,13 @@ class Person(namedtuple('Person', cohort_demographics_header)):
         return cls(person_id, birthdate, gender_concept_id,
                    gender_source_value, gender_concept_name, None,
                    race_source_value, None)
+
+    @classmethod
+    def from_file(cls, filename, stream=False):
+        """Map the tuples in a pickled file to Person namedtuples"""
+        with open(filename, 'rb') as file:
+            rows = pickle.load(file)
+        return tuple(cls(*r) for r in rows)
 
 
 def core_ehr_from_arrow(table):
