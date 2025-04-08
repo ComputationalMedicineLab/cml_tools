@@ -25,8 +25,8 @@ CompressedCurveSet = namedtuple('CompressedCurveSet', compressed_curve_fields)
 
 def compress_curves(curveset: CurveSet):
     """
-    Given a CurveSet tuple, identify which of the curves are constant and
-    which are dense. Return a CompressedCurveSet.
+    Given a CurveSet tuple, identify which of the curves are constant and which
+    are dense. Returns a CompressedCurveSet.
     """
     if isinstance(curveset, CompressedCurveSet):
         return curveset
@@ -64,13 +64,7 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
     "fuzz window" of 365. Please see `cml.time_curves` for details of these
     functions.
 
-    Returns a dictionary with keys `("person_id", "curves", "grid",
-    "concepts")`. The curves are a double-precision ndarray of dimension
-    `[len(concepts), len(grid)]` (note that this is the tranpose of the
-    old-style curves dataframes). The grid is an ndarray of dtype('<M8[D]')
-    (equiv. to `datetime.date`) from the first to the final date in the patient
-    EHR. The concepts is an ndarray in sorted order of the unique integer
-    concept IDs corresponding to the columns of the curves.
+    Returns a Curveset.
     """
     # TODO: think about how best to handle non-daily resolution or alternate
     # curve functions. Probably the best combination of legibility and
@@ -143,23 +137,26 @@ def legacy_curve_gen(data, start=None, until=None, window=365, validate=False,
                      med_dates=True):
     """Function for creating curves from legacy DataFrame format for EHR.
 
-    The curves are created using the old-style format: Age, Sex, and Race are
-    included in the output, and the channels are the old-style (mode, channel)
-    2-tuples of strings. The return keys are `("curves", "grid", "channels")`,
-    as opposed to `("curves", "grid", "concepts")` from `build_ehr_curves`.
-    Note also that the curves returned by this function are the transpose of
-    those returned by `build_ehr_curves`.
+    Emulate building curves from the old-style storage. Equivalent to this
+    older style curve specification, using tools from version 1 of the tools
+    library (`cml_data_tools`):
+
+    >>> from cml_data_tools.curves import *
+    >>> CURVE_SPEC = {
+    >>>     'Age': AgeCurveBuilder(),
+    >>>     'Sex': ConstantCurveBuilder(),
+    >>>     'Race': ConstantCurveBuilder(),
+    >>>     'Condition': RollingIntensity(window=365),
+    >>>     'Measurement': RollingRegression(window=365),
+    >>>     'Medication': FuzzedBinaryCurveBuilder(fuzz_length=365),
+    >>> }
+
+    Returns a CurveSet object, with some differences in the usage of the
+    CurveSet fields: the curves include Age, Sex, and Race; the concepts are
+    specified as 2-tuples of ("mode", "channel") strings. The rows are channels
+    and the columns are observations, which is in accordance with the current
+    usage, but is the transpose of the version 1 dataframe based format.
     """
-    # Emulate building curves from the old-style storage. Equivalent to the
-    # older style curve spec, which we used on IPN and many other projects:
-    #   CURVE_SPEC = {
-    #       'Age': AgeCurveBuilder(),
-    #       'Sex': ConstantCurveBuilder(),
-    #       'Race': ConstantCurveBuilder(),
-    #       'Condition': RollingIntensity(window=365),
-    #       'Measurement': RollingRegression(window=365),
-    #       'Medication': FuzzedBinaryCurveBuilder(fuzz_length=365),
-    #   }
     grid = patient_date_range(data, start=start, until=until, from_df=True)
     m = len(np.unique(data['channel']))
     n = len(grid)
