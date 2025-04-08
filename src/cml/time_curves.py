@@ -82,7 +82,10 @@ def pchip_regression(grid, dates, values, window=None, validate=False):
         values = np.concatenate((values, values[-1:]))
     curve = PchipInterpolator(events, values)(gridpt)
     if isinstance(window, int):
-        curve = move_mean(curve, window=window, min_count=1)
+        if len(curve) < window:
+            curve = np.cumsum(curve) / np.arange(1, len(curve)+1)
+        else:
+            curve = move_mean(curve, window=window, min_count=1)
     return curve
 
 
@@ -111,7 +114,10 @@ def event_intensity(grid, dates, min_count=10, iterations=100, window=None,
                             iterations=iterations,
                             min_count=max(min_count, 1))
     if isinstance(window, int):
-        curve = move_mean(curve, window=window, min_count=1)
+        if len(curve) < window:
+            curve = np.cumsum(curve) / np.arange(1, len(curve)+1)
+        else:
+            curve = move_mean(curve, window=window, min_count=1)
     return curve
 
 

@@ -1,4 +1,5 @@
 """Functions for constructing longitudinal curves specifically over EHR data"""
+from collections import namedtuple
 from functools import partial
 
 import numpy as np
@@ -8,8 +9,44 @@ from cml.ehr.dtypes import *
 from cml.time_curves import *
 
 
+curve_fields = (
+    'person_id', 'grid_start', 'grid_stop', 'grid_step', 'concepts', 'curves',
+    'byrow',
+)
+CurveSet = namedtuple('CurveSet', curve_fields)
+
+compressed_curve_fields = (
+    'person_id', 'grid_start', 'grid_stop', 'grid_step',
+    'dense_concepts', 'const_concepts', 'dense_curves', 'const_curves',
+    'byrow', 'original_nbytes',
+)
+CompressedCurveSet = namedtuple('CompressedCurveSet', compressed_curve_fields)
+
+
+def compress_curves(curveset: CurveSet):
+    """
+    Given a CurveSet tuple, identify which of the curves are constant and
+    which are dense. Return a CompressedCurveSet.
+    """
+    if isinstance(curveset, CompressedCurveSet):
+        return curveset
+    elif not isinstance(curveset, CurveSet):
+        curveset = CurveSet(*curveset)
+
+    X = curveset.curves if curveset.byrow else curveset.curves.T
+    is_const = np.all(X[:, 0, None] == X[:, 1:], axis=1)
+    return CompressedCurveSet(curveset.person_id, curveset.grid_start,
+                              curveset.grid_stop, curveset.grid_step,
+                              dense_concepts=curveset.concepts[~is_const],
+                              const_concepts=curveset.concepts[is_const],
+                              dense_curves=X[~is_const],
+                              const_curves=X[is_const, 0],
+                              byrow=True, original_nbytes=X.nbytes)
+    # XXX / TODO: write the decompress_curves func.
+
+
 def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
-                     legacy_meds=True, **opts):
+                     med_dates=True, **opts):
     """
     A function for applying our most standard curve construction configuration
     in an optimized manner (approx. 1/10 the time of the cml_data_tools.curves
@@ -58,7 +95,6 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
 
     modes = make_concept_map(meta)
     grid = patient_date_range(data, start=start, until=until)
-    pid = int(data.person_id[0])
 
     # If either start or until is not None then the limits of the grid may not
     # coincide with the limits of the patient data; we may need to shrink the
@@ -67,10 +103,13 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
     if start is not None or until is not None:
         data = data[(grid[0] <= data.date) & (data.date <= grid[-1])]
 
-    # The medication curves need all the patient dates where there's data; or,
-    # they need all the _Medication_ mode dates. The former behavior is
-    # probably more correct, but the latter is the legacy behavior.
-    if legacy_meds:
+    # If `med_dates` is True then the Medication curves do the initial
+    # interpolation using *only* dates in the patient record where there is at
+    # least one med, of any kind. The idea is that if there's data for a
+    # patient on a given date that doesn't include meds, then meds were not
+    # being tracked during that visit (or equivalent), and therefore that date
+    # does not give information about the presence or absence of any given med.
+    if med_dates:
         is_med = np.array([modes[c] == 'Medication' for c in data.concept_id])
         all_dates = np.sort(np.copy(data.date[is_med], order='C'))
     else:
@@ -95,11 +134,13 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
             case _:
                 continue
         curves[i] = x
-    return dict(person_id=pid, curves=curves, grid=grid, concepts=concepts)
+    return CurveSet(person_id=int(data.person_id[0]), grid_start=grid[0],
+                    grid_stop=grid[-1]+1, grid_step=1, concepts=concepts,
+                    curves=curves, byrow=True)
 
 
 def legacy_curve_gen(data, start=None, until=None, window=365, validate=False,
-                     legacy_meds=True):
+                     med_dates=True):
     """Function for creating curves from legacy DataFrame format for EHR.
 
     The curves are created using the old-style format: Age, Sex, and Race are
@@ -128,7 +169,7 @@ def legacy_curve_gen(data, start=None, until=None, window=365, validate=False,
     all_channels = data[['mode', 'channel']].to_numpy()
     all_channels = sorted(set(map(tuple, all_channels)))
 
-    if legacy_meds:
+    if med_dates:
         all_dates = data[data['mode'] == 'Medication']['date'].to_numpy()
     else:
         all_dates = data['date'].to_numpy()
@@ -159,4 +200,7 @@ def legacy_curve_gen(data, start=None, until=None, window=365, validate=False,
                 curves[i] = eval_labs(grid, dates, vals)
             case 'Medication':
                 curves[i] = eval_meds(grid, dates, all_dates)
-    return dict(curves=curves, grid=grid, channels=all_channels)
+
+    return CurveSet(person_id=data.ptid[0], grid_start=grid[0],
+                    grid_stop=grid[-1]+1, grid_step=1, concepts=all_channels,
+                    curves=curves, byrow=True)
