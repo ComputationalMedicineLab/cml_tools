@@ -35,7 +35,7 @@ cat omp_vars.sh > "$CONDA_PREFIX/etc/conda/activate.d/set_vars.sh"
 source "$CONDA_PREFIX/etc/conda/activate.d/set_vars.sh"
 
 # Verify the installations
-# Test if MKL is installed and activated
-MKL_VERBOSE=1 python -c 'import numpy, torch'
 # Check versions of major dependencies
 VERBOSE=1 python ./versions.py
+# Test if MKL is installed and activated
+MKL_VERBOSE=1 python -c 'import torch;torch.dot(torch.rand(10), torch.rand(10))'
