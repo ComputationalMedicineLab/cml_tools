@@ -1,0 +1,7 @@
+# JAX and friends
+jax[cuda12]
+
+# Used for notebook visualizations (e.g. jax.debug.visualize_array_sharding)
+rich
+
+# vim: ft=sh
