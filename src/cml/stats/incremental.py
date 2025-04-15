@@ -63,7 +63,7 @@ def collect(data, labels, byrow=True, nansafe=True, nansqueeze=True):
         minval = bn.nanmin(data, axis=axis)
         maxval = bn.nanmax(data, axis=axis)
     else:
-        count = data.shape[axis]
+        count = np.full(data.shape[0 if byrow else 1], data.shape[axis])
         mean = np.mean(data, axis=axis)
         variance = np.var(data, axis=axis)
         negative = np.sum(data < 0, axis=axis)
@@ -119,10 +119,15 @@ def extend_obs(S: IncrStats, count, fill=0.0, labels=None):
     Augments the statistics for a set of labels as though the existing data had
     been extended to `count` total observations, filling with `fill`.
     """
-    _, idx, _ = np.intersect1d(S.labels, labels, assume_unique=True, return_indices=True)
+    if labels is None:
+        labels = np.copy(S.labels)
+        idx = np.arange(len(labels))
+    else:
+        _, idx, _ = np.intersect1d(S.labels, labels, assume_unique=True, return_indices=True)
     update = np.full((6, len(labels)), fill)
     update[0] = count - S.count[idx]
     update[2] = 0.0
+    update[3] = update[0] if fill < 0 else 0.0
     return merge(S, IncrStats(labels, *update))
 
 
