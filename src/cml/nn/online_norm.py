@@ -1,7 +1,9 @@
 """A Pytorch Module for calculating model mean and variance inputs online"""
-# see also: ../online_norm.py, which is designed for aggregating across pandas
-# dataframes with assumed heterogeneous data channels. The basic update
-# algorithm is the same though.
+# TODO: consider removing this module? In practice, if the data is available
+# prior to training we learn the stats and scale the data before it ever gets
+# to the model; or, if we want online learning of the stats, we could just put
+# a BatchNorm1d at the head of the model. OnlineStandardScaler seems
+# superfluous.
 
 # TODO: fill_nan currently accepts None or a float; but we could use strings
 # like "p01" (or something) to draw from the learned Gaussian and use that as
