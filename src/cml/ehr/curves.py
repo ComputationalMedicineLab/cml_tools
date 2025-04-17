@@ -5,44 +5,96 @@ from functools import partial
 import numpy as np
 import pandas as pd
 
-from cml.ehr.dtypes import *
-from cml.time_curves import *
+from cml.ehr.dtypes import ConceptMeta
+from cml.record import Record
+from cml.time_curves import binary_signal, event_intensity, pchip_regression
+
+# One year in minutes: used for constructing Age curves
+ONE_YEAR = np.timedelta64(((24*365)+6)*60, 'm')
 
 
-curve_fields = (
-    'person_id', 'grid_start', 'grid_stop', 'grid_step', 'concepts', 'curves',
-    'byrow',
-)
-CurveSet = namedtuple('CurveSet', curve_fields)
+class CurveSet(Record):
+    fields = ('person_id', 'concepts', 'curves', 'grid')
+    __slots__ = fields
 
-compressed_curve_fields = (
-    'person_id', 'grid_start', 'grid_stop', 'grid_step',
-    'dense_concepts', 'const_concepts', 'dense_curves', 'const_curves',
-    'byrow', 'original_nbytes',
-)
-CompressedCurveSet = namedtuple('CompressedCurveSet', compressed_curve_fields)
+    def __init__(self, person_id, concepts, curves, grid):
+        self.person_id = person_id
+        self.concepts = concepts
+        self.curves = curves
+        self.grid = grid
+
+    @property
+    def astuple(self):
+        return (self.person_id, self.concepts, self.curves, self.grid)
+
+
+class CompressedCurveSet(Record):
+    fields = ('person_id', 'const_concepts', 'const_curves', 'dense_concepts',
+              'dense_curves', 'grid', 'full_nbytes')
+    __slots__ = fields
+
+    def __init__(self, person_id, const_concepts, const_curves, dense_concepts,
+                 dense_curves, grid, full_nbytes):
+        self.person_id = person_id
+        self.const_concepts = const_concepts
+        self.const_curves = const_curves
+        self.dense_concepts = dense_concepts
+        self.dense_curves = dense_curves
+        self.grid = grid
+        self.full_nbytes = full_nbytes
+
+    @property
+    def astuple(self):
+        return (self.person_id, self.const_concepts, self.const_curves,
+                self.dense_concepts, self.dense_curves, self.grid,
+                self.full_nbytes)
 
 
 def compress_curves(curveset: CurveSet):
-    """
-    Given a CurveSet tuple, identify which of the curves are constant and which
-    are dense. Returns a CompressedCurveSet.
-    """
     if isinstance(curveset, CompressedCurveSet):
         return curveset
     elif not isinstance(curveset, CurveSet):
         curveset = CurveSet(*curveset)
+    # If every value in a curve is nearly the same as the first, it is const
+    is_const = np.isclose(curveset.curves[:, 0, None], curveset.curves)
+    is_const = np.all(is_const, axis=1)
+    return CompressedCurveSet(curveset.person_id,
+                              curveset.concepts[is_const],
+                              curveset.curves[is_const, 0],
+                              curveset.concepts[~is_const],
+                              curveset.curves[~is_const],
+                              curveset.grid,
+                              curveset.curves.nbytes)
 
-    X = curveset.curves if curveset.byrow else curveset.curves.T
-    is_const = np.all(X[:, 0, None] == X[:, 1:], axis=1)
-    return CompressedCurveSet(curveset.person_id, curveset.grid_start,
-                              curveset.grid_stop, curveset.grid_step,
-                              dense_concepts=curveset.concepts[~is_const],
-                              const_concepts=curveset.concepts[is_const],
-                              dense_curves=X[~is_const],
-                              const_curves=X[is_const, 0],
-                              byrow=True, original_nbytes=X.nbytes)
-    # XXX / TODO: write the decompress_curves func.
+
+def split_by_concept_id(data, assume_sorted=True):
+    """Returns views on data grouped by concept_id"""
+    if not assume_sorted:
+        data = data[np.argsort(data['concept_id'])]
+    ids, positions = np.unique(data['concept_id'], return_index=True)
+    groups = np.split(data, positions[1:])
+    assert sum(len(x) for x in groups) == len(data)
+    return groups, ids, positions
+
+
+def construct_date_range(data, start=None, until=None, from_df=False):
+    """Construct a date range at daily resolution for the EHR in `data`"""
+    # Old-style storage for patient EHR was as dataframes with five columns:
+    # ['patient_id', 'date', 'mode', 'channel', 'value']. *All* patient EHR was
+    # stored here, including Age, Sex, Race, for which the date column was NaT.
+    # If the data is not a dataframe it is assumed to be an EHR.dtype recarray.
+    dts = data['date'].to_numpy() if from_df else data.date
+    if start is None: start = np.nanmin(dts)
+    if until is None: until = np.nanmax(dts)
+    start = start.astype(np.dtype('<M8[D]'))
+    until = until.astype(np.dtype('<M8[D]')) + 1
+    return np.arange(start, until)
+
+
+def grid_range_args(grid):
+    """Produce start, stop, and step arguments from grid for np.arange"""
+    assert len(grid) > 1 and np.all(np.sort(grid) == grid)
+    return grid[0], grid[-1] + 1, (grid[1] - grid[0])
 
 
 def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
@@ -87,8 +139,8 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
     }
     fi_min_events = 2 * intensity_opts['min_count']
 
-    modes = make_concept_map(meta)
-    grid = patient_date_range(data, start=start, until=until)
+    modes = ConceptMeta.make_mode_mapping(meta)
+    grid = construct_date_range(data, start=start, until=until)
 
     # If either start or until is not None then the limits of the grid may not
     # coincide with the limits of the patient data; we may need to shrink the
@@ -128,9 +180,8 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
             case _:
                 continue
         curves[i] = x
-    return CurveSet(person_id=int(data.person_id[0]), grid_start=grid[0],
-                    grid_stop=grid[-1]+1, grid_step=1, concepts=concepts,
-                    curves=curves, byrow=True)
+    return CurveSet(person_id=int(data.person_id[0]), concepts=concepts,
+                    curves=curves, grid=grid_range_args(grid))
 
 
 def legacy_curve_gen(data, start=None, until=None, window=365, validate=False,
@@ -157,7 +208,7 @@ def legacy_curve_gen(data, start=None, until=None, window=365, validate=False,
     and the columns are observations, which is in accordance with the current
     usage, but is the transpose of the version 1 dataframe based format.
     """
-    grid = patient_date_range(data, start=start, until=until, from_df=True)
+    grid = construct_date_range(data, start=start, until=until, from_df=True)
     m = len(np.unique(data['channel']))
     n = len(grid)
     curves = np.empty((m, n), dtype=float)
@@ -198,6 +249,5 @@ def legacy_curve_gen(data, start=None, until=None, window=365, validate=False,
             case 'Medication':
                 curves[i] = eval_meds(grid, dates, all_dates)
 
-    return CurveSet(person_id=data.ptid[0], grid_start=grid[0],
-                    grid_stop=grid[-1]+1, grid_step=1, concepts=all_channels,
-                    curves=curves, byrow=True)
+    return CurveSet(person_id=data.ptid[0], concepts=all_channels,
+                    curves=curves, grid=grid_range_args(grid))

@@ -30,12 +30,13 @@ The basic workflow is:
    person tables, as 4-tuples of (person_id, date, concept_id, value).
    Currently only measurements actually use the value field; the other data
    modes include it for compatibility in UNION clauses and in the
-   `core_ehr_dtype` (see ./dtypes.py).
+   `EHR.dtype` datatype (see ./dtypes.py).
 5. Select metadata from the OMOP source for each selected concept.
 6. Select demographics (metadata) from the OMOP source for each cohort member.
 """
 import argparse
 import pathlib
+import pprint
 
 
 CREATE_SCHEMA = """\
@@ -344,12 +345,19 @@ if __name__ == '__main__':
     parser.add_argument('--schema', '-s', type=str)
     parser.add_argument('--source', '-v', type=str)
     parser.add_argument('--omop', '-p', type=str)
+    parser.add_argument('--debug', '-d', action='store_true')
     # A filter on patient birthdates. Used mostly to exclude erroneous entries.
     parser.add_argument('--birth-datetime', '-b', default='1920-01-01')
     # A filter on entry date of data
     parser.add_argument('--start-date', '-d', default='2000-01-01')
     args = parser.parse_args()
-    print(vars(args))
+    pprint.pprint(vars(args))
+
+    # Print the *templates*, without any filling, straight to stdout
+    if args.debug:
+        for t in TEMPLATES.values():
+            print(t)
+        exit()
 
     # Exclude None vals so that the templates will throw KeyError if they are
     # missing arguments

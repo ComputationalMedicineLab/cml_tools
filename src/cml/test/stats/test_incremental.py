@@ -11,6 +11,17 @@ from cml.stats.incremental import (
     IncrStats, collect, merge, extend_obs, concat_obs
 )
 
+class TestIncrStatsClass(unittest.TestCase):
+    # Check the semantics of the anynan property
+    def test_anynan(self):
+        X = npr.rand(10, 1000)
+        L = np.arange(10)
+        stats = collect(X, L)
+        self.assertFalse(stats.anynan)
+        X[0, 0] = np.nan
+        stats = collect(X, L, nansafe=False)
+        self.assertTrue(stats.anynan)
+
 
 class TestIncrementalStats(unittest.TestCase):
     def test_collect(self):

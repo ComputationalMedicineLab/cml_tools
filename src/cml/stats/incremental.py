@@ -9,7 +9,8 @@ import numpy as np
 
 
 class IncrStats:
-    __slots__ = ('labels', 'count', 'mean', 'variance', 'negative', 'minval', 'maxval')
+    fields = ('labels', 'count', 'mean', 'variance', 'negative', 'minval', 'maxval')
+    __slots__ = fields
 
     def __init__(self, labels, count, mean, variance, negative, minval, maxval):
         self.labels = labels
@@ -22,11 +23,12 @@ class IncrStats:
 
     @property
     def astuple(self):
-        return tuple(getattr(self, name) for name in self.__slots__)
+        return (self.labels, self.count, self.mean, self.variance,
+                self.negative, self.minval, self.maxval)
 
     @property
     def asdict(self):
-        return dict((name, getattr(self, name)) for name in self.__slots__)
+        return dict(zip(self.fields, self.astuple))
 
     @property
     def asarrays(self):
@@ -45,7 +47,8 @@ class IncrStats:
 
     @property
     def anynan(self):
-        return not any(map(bn.anynan, self.astuple))
+        """True if there are any `nan` in any of the stats"""
+        return any(map(bn.anynan, self.astuple))
 
 
 def collect(data, labels, byrow=True, nansafe=True, nansqueeze=True):
