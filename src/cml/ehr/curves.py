@@ -49,8 +49,31 @@ class CompressedCurveSet(Record):
                 self.dense_concepts, self.dense_curves, self.grid,
                 self.full_nbytes)
 
+    @property
+    def concepts(self):
+        """Concatenate const and dense concepts"""
+        return np.concatenate((self.const_concepts, self.dense_concepts))
+
+
+class CurvePointSet(Record):
+    fields = ('person_id', 'dates', 'concepts', 'values')
+    __slots__ = fields
+
+    def __init__(self, person_id, dates, concepts, values):
+        assert values.shape[0] == len(dates)
+        assert values.shape[1] == len(concepts)
+        self.person_id = person_id
+        self.dates = dates
+        self.concepts = concepts
+        self.values = values
+
+    @property
+    def astuple(self):
+        return (self.person_id, self.dates, self.concepts, self.values)
+
 
 def compress_curves(curveset: CurveSet):
+    """Construct a CompressedCurveSet from a CurveSet compatible object"""
     if isinstance(curveset, CompressedCurveSet):
         return curveset
     elif not isinstance(curveset, CurveSet):
@@ -65,6 +88,41 @@ def compress_curves(curveset: CurveSet):
                               curveset.curves[~is_const],
                               curveset.grid,
                               curveset.curves.nbytes)
+
+
+def select_cross_section(curveset, dates, sort=False):
+    """Get the values of each curve in a curveset at the given dates"""
+    # I think I've covered the cases... zero-dim ndarrays are annoying
+    if not isinstance(dates, np.ndarray):
+        if np.isscalar(dates):
+            dates = np.array([dates])
+        else:
+            dates = np.array(dates)
+    if dates.ndim == 0:
+        dates = dates.reshape(1)
+    if sort:
+        dates = np.sort(dates)
+
+    if not isinstance(curveset, (CurveSet, CompressedCurveSet)):
+        curveset = CurveSet(*curveset)
+
+    dmin, dmax, _ = curveset.grid
+    if not (np.all(dmin <= dates) and np.all(dates < dmax)):
+        grid = curveset.grid
+        raise ValueError(f'Invalid {dates=} for {curveset=} ({grid=})')
+    index = (dates - dmin).astype(int)
+
+    if isinstance(curveset, CurveSet):
+        values = curveset.curves[:, index]
+    else:
+        const = np.tile(curveset.const_curves, (len(index), 1))
+        dense = curveset.dense_curves.T[index]
+        values = np.hstack((const, dense))
+
+    ordering = np.argsort(curveset.concepts)
+    concepts = np.copy(curveset.concepts[ordering])
+    values = np.copy(values[:, ordering])
+    return CurvePointSet(curveset.person_id, dates, concepts, values)
 
 
 def split_by_concept_id(data, assume_sorted=True):
@@ -116,7 +174,7 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
     "fuzz window" of 365. Please see `cml.time_curves` for details of these
     functions.
 
-    Returns a Curveset.
+    Returns a CurveSet.
     """
     # TODO: think about how best to handle non-daily resolution or alternate
     # curve functions. Probably the best combination of legibility and

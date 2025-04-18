@@ -1,9 +1,61 @@
 """Tools for sampling patient data spaces"""
 import functools
+import pickle
+
 import numpy as np
 
 import cml
 from cml.ehr.dtypes import EHR
+
+
+class DateSampleIndex:
+    dtype = np.dtype([('person_id', np.int64), ('date', np.dtype('<M8[D]'))])
+    __slots__ = ('data',)
+
+    def __init__(self, data, sort=False):
+        # FYI sorting returns a *copy* of the input array, so if sort=True then
+        # we are guaranteed (one would hope) to have a contiguous data array
+        if sort:
+            data = np.sort(data)
+        self.data = data
+
+    def __eq__(self, other):
+        return np.all(self.data == other.data)
+
+    @classmethod
+    def from_arrays(cls, ids, dates, sort=False):
+        """Construct a DateSampleIndex from corresponding iterables"""
+        assert len(ids) == len(dates)
+        data = np.empty(len(ids), dtype=cls.dtype)
+        data['person_id'] = ids
+        data['date'] = dates
+        return cls(data, sort=sort)
+
+    @classmethod
+    def from_tuples(cls, tuples, sort=False):
+        """Construct a DateSampleIndex from tuples of (person_id, date)"""
+        return cls.from_arrays(*zip(*tuples), sort=sort)
+
+    @classmethod
+    def from_pkl(cls, filename, sort=False):
+        """Load a DateSampleIndex from a pickle file"""
+        with open(filename, 'rb') as file:
+            return cls(pickle.load(file), sort=sort)
+
+    def to_pkl(self, filename, mode='wb'):
+        """Write a DateSampleIndex to a pickle file"""
+        with open(filename, mode) as file:
+            pickle.dump(self.data, file, protocol=pickle.HIGHEST_PROTOCOL)
+
+    @property
+    def npersons(self):
+        """Number of unique persons in the sample index"""
+        return len(np.unique(self.data['person_id']))
+
+    @property
+    def ndates(self):
+        """Number of unique dates in the sample index"""
+        return len(np.unique(self.data['date']))
 
 
 class SampleSpace:
@@ -73,6 +125,19 @@ class SampleSpace:
         X = np.hstack((self.ids[:, None], self.indices))
         return tuple(cml.iter_batches(X, n=n, consume=False))
 
+    # Unlike Record objects, we are usually only interested in serializing
+    # these once per file, not in a list or tuple-of-tuples. XXX: should change
+    # the Record functions of same name to be from_pkl_many / to_pkl_many to
+    # reflect this difference in usage?
+    @classmethod
+    def from_pkl(cls, filename):
+        with open(filename, 'rb') as file:
+            return cls(*pickle.load(file))
+
+    def to_pkl(self, filename, mode='wb'):
+        with open(filename, mode) as file:
+            pickle.dump(self.astuple, file, protocol=pickle.HIGHEST_PROTOCOL)
+
 
 def overlap(a_start, a_stop, b_start, b_stop):
     """Predicate: do the intervals A and B have any overlap?"""
@@ -127,4 +192,8 @@ def sample_uniform(space: SampleSpace, size: int, rng=np.random.default_rng()):
     index = np.insert(index, 0, 0)
     locs = np.searchsorted(index, points, side='right') - 1
     offsets = points - index[locs]
-    return space.ids[locs], (space.dates[locs, 0] + offsets)
+    # sort=True in the DateSampleIndex constructor will make sure that the
+    # persons and corresponding dates are *both* sorted and contiguous
+    persons = space.ids[locs]
+    dates = space.dates[locs, 0] + offsets
+    return DateSampleIndex.from_arrays(persons, dates, sort=True)

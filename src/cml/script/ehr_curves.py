@@ -13,7 +13,7 @@ from time import perf_counter
 
 import numpy as np
 
-from cml import get_nproc
+from cml import init_logging, get_nproc
 from cml.ehr.curves import build_ehr_curves, compress_curves
 from cml.ehr.dtypes import ConceptMeta, EHR
 from cml.ehr.samplespace import SampleSpace
@@ -31,22 +31,6 @@ N_PROC = get_nproc()
 # just the total size of the byte (pickled curve objects) it is storing until
 # the file becomes available for writing.
 N_BYTES = 2147483648
-
-# We've moved to using managing Processes directly (a Pool doesn't seem to gain
-# anything since we make exactly one Process per input batch anyway) but I'm
-# leaving this comment and function here as documentation about how locks work
-# differently between Pools and Processes.
-#
-# Locks are hard: https://stackoverflow.com/a/69913167
-# This is apparently an issue with the Pool rather than passing locks as
-# arguments. Locks passed as arguments to Process objects are correct; locks
-# passed as arguments to Pool workers are incorrect (bc the pool behind the
-# scenes is using a Queue to coordinate its workers, and the lock cannot
-# survive pickling through the queue).
-def init_proc(_lock):
-    """Put a Lock into the process global namespace"""
-    global lock
-    lock = _lock
 
 
 def run_curves(data, meta, stats=None, window=365):
@@ -74,53 +58,65 @@ def worker(process_num, input_batch, mem, lock, queue, meta, shape, args):
     w = len(str(n))
     msg = (f'[{process_num:3} - {os.getpid()}] writing batch %{w}d '
            f'(%{w}d / {n}); nbytes=%d (%d sec lock wait)')
+    del n, w
 
     data = EHR.wrap_sharedmem(mem, shape).data
     batch = []
-    total = 0
     nbytes = 0
     stats = None
     # initial calls to some CPU clocks can take a second; this is to "warm
     # up" the CPU timer so the first pairs of timings isn't slow
     perf_counter()
 
-    for person_id, i, j in input_batch:
+    _write_stats = args.statsfile is not None
+    _write_curves = args.curvesfile is not None
+    _write_samples = args.samplesfile is not None
+
+    for total, (person_id, i, j) in enumerate(input_batch, start=1):
         # Select the patient EHR and verify its all for one patient. If
         # this assert fails then check that the source data is sorted.
         group = data[i:j]
         assert np.all(person_id == group.person_id)
-        curveset, stats = run_curves(group, meta, stats=stats)
-        # Spend cycles pickling data *prior* to acquiring the lock.
-        batch.append(pickle.dumps(compress_curves(curveset).astuple))
-        nbytes += len(batch[-1])
-        total += 1
-        # If the curve bytestrings exceed the amount of space the process is
-        # supposed to use, then try to get the lock and flush the results to
-        # file. If we're using more than the hard cap, block.
-        block_time = perf_counter()
-        if (
-            nbytes >= args.maxbytes
-            and lock.acquire(block=(nbytes >= 4*args.maxbytes))
-        ):
-            try:
-                block_time = perf_counter() - block_time
-                logging.info(msg, len(batch), total, nbytes, block_time)
-                with open(args.outfile, 'ab') as file:
-                    file.writelines(batch)
-                batch = []
-                nbytes = 0
-            finally:
-                lock.release()
+
+        if _write_stats:
+            curveset, stats = run_curves(group, meta, stats=stats)
+        else:
+            curveset = build_ehr_curves(group, meta)
+
+        if _write_curves:
+            # Spend cycles pickling data *prior* to acquiring the lock.
+            batch.append(pickle.dumps(compress_curves(curveset).astuple))
+            nbytes += len(batch[-1])
+            # If the curve bytestrings exceed the amount of space the process
+            # is supposed to use, then try to get the lock and flush the
+            # results to file. If we're using more than the hard cap, block.
+            block_time = perf_counter()
+            if (
+                nbytes >= args.maxbytes
+                and lock.acquire(block=(nbytes >= 4*args.maxbytes))
+            ):
+                try:
+                    block_time = perf_counter() - block_time
+                    logging.info(msg, len(batch), total, nbytes, block_time)
+                    with open(args.curvesfile, 'ab') as file:
+                        file.writelines(batch)
+                    batch = []
+                    nbytes = 0
+                finally:
+                    lock.release()
+
     # Must remember to write the final batch of curves to disk. Can block now
     # indefinitely, nothing left to do but write and put the stats on the
     # return queue.
-    block_time = perf_counter()
-    with lock:
-        block_time = perf_counter() - block_time
-        logging.info(msg, len(batch), total, nbytes, block_time)
-        with open(args.outfile, 'ab') as file:
-            file.writelines(batch)
-    # This is *last* - after recv the parent joins the process
+    if _write_curves:
+        block_time = perf_counter()
+        with lock:
+            block_time = perf_counter() - block_time
+            logging.info(msg, len(batch), total+1, nbytes, block_time)
+            with open(args.curvesfile, 'ab') as file:
+                file.writelines(batch)
+
+    # Do last: parent process knows it can `join` when we `put` on this queue.
     queue.put((process_num, stats))
 
 
@@ -128,36 +124,86 @@ def cli():
     """Generate curves from core EHR data and place in an output file"""
     parser = argparse.ArgumentParser(description=__doc__)
     f = parser.add_argument
-    f('-x', '--datafile', type=Path, default='ehr_data.npy')
-    f('-m', '--metafile', type=Path, default='ehr_meta.pkl')
-    f('-o', '--outfile', type=Path, default='ehr_curves.npy')
-    f('-s', '--statsfile', type=Path, default='ehr_curve_stats.npz')
-    f('-n', '--nproc', type=int, default=N_PROC)
-    f('-b', '--maxbytes', type=int, default=N_BYTES)
-    f('-v', '--verbose', action='count', default=0)
-    f('-l', '--logfile', type=Path, default=None)
-    f('-c', '--clobber', action='store_true', default=False)
-    f('--stats-only', action='store_true', default=False,
-      help='Estimate stats over curves but do not write curves to file')
+
+    ### Basic input / output file arguments
+    f('-d', '--datafile', type=Path, default='ehr_data.npy',
+      help='Input .npy file of structured base EHR data (see cml.ehr.dtypes)')
+
+    f('-m', '--metafile', type=Path, default='ehr_meta.pkl',
+      help='Input .pkl list of ConceptMeta tuples (see cml.ehr.dtypes)')
+
+    f('-o', '--curvesfile', type=Path, default=None,
+      help='Output .pkl file for curves (if omitted, curves are not written)')
+
+    f('-s', '--statsfile', type=Path, default=None,
+      help='Output .npz file for stats (if omitted, stats are not collected)')
+
+    ### Arguments related to evaluating cross sections from the curveset
+    f('-S', '--samplespec', nargs='*', action='append', default=None,
+      help="""\
+        A string specifying a sampling strategy. May be provided multiple times
+        to specify selecting multiple sets of samples. Each argument (or set of
+        arguments) must specify 'SOURCE NUMBER DEST'. `SOURCE` may be the
+        string token "default" or a path to a pickle to be read by SampleSpace.
+        If "default," then the sample space is over the entire underyling EHR.
+        If `NUMBER` is the token "None" then the `SOURCE` argument is
+        interpreted as providing an explicit list of (person_id, date) points
+        to evaluate; otherwise, `NUMBER` samples are selected from the
+        corresponding SampleSpace. `DEST` is an output file to which to pickle
+        the results. `DEST` is opened in `"ab"` mode and, if more than one
+        sample spec is given, in serial, so that the results of many samplings
+        could be aggregated as one pickle string.
+      """)
+
+    # TODO: implement all these sampling options.
+    f('--samplespace', type=Path, default=None, action='append',
+      help='Input .pkl with a SampleSpace from which to sample curve points.'
+           ' May be specified multiple times to sample in parallel.')
+
+    f('--nsamples', type=int, default=None, action='append',
+      help='Number of samples to pull from a SampleSpace if provided')
+
+    f('--samplepoints', type=Path, default=None, action='append',
+      help='Input .pkl with a list of patient-datetime points to evaluate;'
+           ' only provide one of --samplespace or --samplepoints')
+
+    f('-z', '--samplesfile', type=Path, default=None, action='append',
+      help='Output .pkl for sample points evaluated from the curves')
+
+    ### Logging, verbosity, resource control, etc.
+    f('-l', '--logfile', type=Path, default=None,
+      help='Output file for logging (if omitted and verbose, logs are written'
+           ' to stdout; if provided but not verbose, logging is set to INFO)')
+
+    f('-p', '--nproc', type=int, default=N_PROC,
+      help='Number of processor cores to use. The sample space is divided'
+           ' equally by person_id among all subprocesses. Defaults to an '
+           ' estimate of the number of available physical cores')
+
+    f('-b', '--maxbytes', type=int, default=N_BYTES,
+      help='Max RAM (in bytes) before each subprocess tries to flush results.'
+           ' Each subprocess will block at 4x this amount. Default 2 GiB')
+
+    f('-v', '--verbose', action='count', default=0,
+      help='Sets the logging level (-v = INFO, -vv = DEBUG)')
+
+    f('-c', '--clobber', action='store_true', default=False,
+      help='If True and argument --datafile exists, overwrite it')
+
     args = parser.parse_args()
-
     if args.verbose > 0 or args.logfile:
-        level = logging.INFO
-        if args.verbose > 1:
-            level = logging.DEBUG
-        logging.basicConfig(filename=args.logfile,
-                            level=level,
-                            format='%(asctime)s %(name)s %(message)s',
-                            datefmt='%m/%d/%Y %I:%M:%S %p')
-
+        level = logging.DEBUG if args.verbose > 1 else logging.INFO
+        init_logging(filename=args.logfile, level=level)
     logging.info(pprint(vars(args)))
+    #breakpoint()
+
     # The output file may be *very* large and require a *lot* of time to
     # calculate; so, let us be sure that we want to clobber it if it exists.
-    if args.outfile.exists():
+    if args.curvesfile.exists():
         if not args.clobber:
             logging.info('Output file exists, aborting')
             exit()
-        open(args.outfile, 'w').close()
+        open(args.curvesfile, 'w').close()
 
     logging.info('Loading the EHR meta data from %s', args.metafile)
     meta = ConceptMeta.from_pkl(args.metafile)
@@ -165,6 +211,8 @@ def cli():
     logging.info('Loading main EHR from %s', args.datafile)
     ehr = EHR.from_npy(args.datafile).data
 
+    # If we are writing curves or collecting stats this is the thing to do.
+    # TODO: we're doing neither, but need samples evaluated.
     logging.info('Batching by person_id')
     batches = SampleSpace.from_ehr(ehr).batch_indices(n=args.nproc)
 
