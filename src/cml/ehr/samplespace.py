@@ -6,6 +6,7 @@ import numpy as np
 
 import cml
 from cml.ehr.dtypes import EHR
+from cml.record import Record
 
 
 class DateSampleIndex:
@@ -22,6 +23,18 @@ class DateSampleIndex:
     def __eq__(self, other):
         return np.all(self.data == other.data)
 
+    def split_by_person(self, asdict=True):
+        """
+        Return the index split by person id as either a list of structured
+        ndarrays of self.dtype or a mapping from person ids to date arrays.
+        """
+        ids, index = np.unique(self.data['person_id'], return_index=True)
+        # The zero-th split is always empty for some reason
+        splits = np.split(self.data, index)[1:]
+        if asdict:
+            return {d['person_id'][0]: d['date'] for d in splits}
+        return splits
+
     @classmethod
     def from_arrays(cls, ids, dates, sort=False):
         """Construct a DateSampleIndex from corresponding iterables"""
@@ -36,16 +49,16 @@ class DateSampleIndex:
         """Construct a DateSampleIndex from tuples of (person_id, date)"""
         return cls.from_arrays(*zip(*tuples), sort=sort)
 
-    @classmethod
-    def from_pkl(cls, filename, sort=False):
-        """Load a DateSampleIndex from a pickle file"""
-        with open(filename, 'rb') as file:
-            return cls(pickle.load(file), sort=sort)
-
-    def to_pkl(self, filename, mode='wb'):
+    def to_pickle(self, filename, mode='wb'):
         """Write a DateSampleIndex to a pickle file"""
         with open(filename, mode) as file:
             pickle.dump(self.data, file, protocol=pickle.HIGHEST_PROTOCOL)
+
+    @classmethod
+    def from_pickle(cls, filename, sort=False):
+        """Load a DateSampleIndex from a pickle file"""
+        with open(filename, 'rb') as file:
+            return cls(pickle.load(file), sort=sort)
 
     @property
     def npersons(self):
@@ -58,8 +71,9 @@ class DateSampleIndex:
         return len(np.unique(self.data['date']))
 
 
-class SampleSpace:
-    __slots__ = ('ids', 'indices', 'dates')
+class SampleSpace(Record):
+    fields = ('ids', 'indices', 'dates')
+    __slots__ = fields
 
     def __init__(self, ids, indices, dates):
         self.ids = np.array(ids)
@@ -85,12 +99,6 @@ class SampleSpace:
         # start and stop in range, np.arange, etc.
         dates = tuple(((d := ehr.date[i:j]).min(), d.max()+1) for i, j in indices)
         return cls(ids, indices, dates)
-
-    @classmethod
-    def from_iter(cls, iterable):
-        """Constructor from an iterable of (person, ij, dates) tuples"""
-        # Inverse of self.__iter__; notice that *zip(*) is inverse of zip
-        return cls(*zip(*iterable))
 
     def __len__(self):
         return len(self.ids)
@@ -123,20 +131,7 @@ class SampleSpace:
 
     def batch_indices(self, n=None):
         X = np.hstack((self.ids[:, None], self.indices))
-        return tuple(cml.iter_batches(X, n=n, consume=False))
-
-    # Unlike Record objects, we are usually only interested in serializing
-    # these once per file, not in a list or tuple-of-tuples. XXX: should change
-    # the Record functions of same name to be from_pkl_many / to_pkl_many to
-    # reflect this difference in usage?
-    @classmethod
-    def from_pkl(cls, filename):
-        with open(filename, 'rb') as file:
-            return cls(*pickle.load(file))
-
-    def to_pkl(self, filename, mode='wb'):
-        with open(filename, mode) as file:
-            pickle.dump(self.astuple, file, protocol=pickle.HIGHEST_PROTOCOL)
+        return tuple(cml.iter_batches(X, n=n))
 
 
 def overlap(a_start, a_stop, b_start, b_stop):

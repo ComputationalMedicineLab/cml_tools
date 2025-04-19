@@ -34,27 +34,19 @@ class ConceptMeta(Record):
                 self.vocabulary_id, self.concept_class_id, self.concept_code,
                 self.data_mode, self.fill_value)
 
-    @property
-    def asdict(self):
-        k, *v = self.astuple
-        return {k: v}
-
     @classmethod
     def make_mode_mapping(cls, meta):
         """Produce a dictionary from concept_id to data_mode"""
-        # Refer to cml.record.Record for from_iter
-        if not isinstance(meta[0], cls):
-            meta = cls.from_iter(meta)
         return {r.concept_id: r.data_mode for r in meta}
 
     @classmethod
-    def inverse_channel_mapping(cls, channels, meta):
+    def inverse_channel_mapping(cls, meta, channels=None):
         """Produce a dictionary from (data_mode, concept_code) to concept_id"""
-        channels = set(channels)
-        if not isinstance(meta[0], cls):
-            meta = cls.from_iter(meta)
-        forward = {r.concept_id: (r.data_mode, r.concept_code) for r in meta}
-        return {v: k for k, v in forward.items() if v in channels}
+        mapping = {(r.data_mode, r.concept_code): r.concept_id for r in meta}
+        if channels is not None:
+            channels = set(channels)
+            mapping = {k: v for k, v in mapping.items() if k in channels}
+        return mapping
 
 
 class PersonMeta(Record):
@@ -220,7 +212,7 @@ class EHR:
         # are missing then based on `strict` we bail, otherwise ignore.
         data = df[~np.isin(df['mode'].str.lower(), ('age', 'sex', 'race'))]
         channels = set(map(tuple, data[['mode', 'channel']].to_numpy()))
-        to_concepts = ConceptMeta.inverse_channel_mapping(channels, meta)
+        to_concepts = ConceptMeta.inverse_channel_mapping(meta, channels)
 
         if strict and len(channels) != len(to_concepts):
             missing = [x for x in channels if x not in to_concepts]

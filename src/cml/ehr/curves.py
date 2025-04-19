@@ -60,8 +60,8 @@ class CurvePointSet(Record):
     __slots__ = fields
 
     def __init__(self, person_id, dates, concepts, values):
-        assert values.shape[0] == len(dates)
-        assert values.shape[1] == len(concepts)
+        assert values.shape[0] == len(concepts)
+        assert values.shape[1] == len(dates)
         self.person_id = person_id
         self.dates = dates
         self.concepts = concepts
@@ -90,7 +90,7 @@ def compress_curves(curveset: CurveSet):
                               curveset.curves.nbytes)
 
 
-def select_cross_section(curveset, dates, sort=False):
+def select_cross_section(curveset, dates):
     """Get the values of each curve in a curveset at the given dates"""
     # I think I've covered the cases... zero-dim ndarrays are annoying
     if not isinstance(dates, np.ndarray):
@@ -100,8 +100,7 @@ def select_cross_section(curveset, dates, sort=False):
             dates = np.array(dates)
     if dates.ndim == 0:
         dates = dates.reshape(1)
-    if sort:
-        dates = np.sort(dates)
+    dates = np.sort(dates)
 
     if not isinstance(curveset, (CurveSet, CompressedCurveSet)):
         curveset = CurveSet(*curveset)
@@ -112,16 +111,17 @@ def select_cross_section(curveset, dates, sort=False):
         raise ValueError(f'Invalid {dates=} for {curveset=} ({grid=})')
     index = (dates - dmin).astype(int)
 
+    # Values must be shape [features, dates] at this point
     if isinstance(curveset, CurveSet):
         values = curveset.curves[:, index]
     else:
         const = np.tile(curveset.const_curves, (len(index), 1))
-        dense = curveset.dense_curves.T[index]
-        values = np.hstack((const, dense))
+        dense = curveset.dense_curves[:, index]
+        values = np.vstack((const.T, dense))
 
     ordering = np.argsort(curveset.concepts)
     concepts = np.copy(curveset.concepts[ordering])
-    values = np.copy(values[:, ordering])
+    values = np.copy(values[ordering])
     return CurvePointSet(curveset.person_id, dates, concepts, values)
 
 

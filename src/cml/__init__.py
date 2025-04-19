@@ -2,6 +2,7 @@
 import itertools
 import logging
 import os
+import pickle
 import sys
 
 import numpy as np
@@ -25,24 +26,47 @@ def init_logging(filename='', **opts):
     logging.basicConfig(**opts)
 
 
-def get_nproc(n=2):
+def get_nproc(per=2):
     """"Estimate the number of physical cores available to the process"""
     # function process_cpu_count added in 3.13
     if sys.version_info < (3, 13):
-        return len(os.sched_getaffinity(0)) // n
-    return os.process_cpu_count() // n
+        return len(os.sched_getaffinity(0)) // per
+    return os.process_cpu_count() // per
 
 
-def iter_batches(iterable, n=None, consume=True):
+def iter_batches(iterable, n=None):
     """
     Yields `n` batches containing approximately equal numbers of items from
     iterable. `n` defaults to an estimate of the number of physical cores the
     process is allowed to utilize.
     """
-    if n is None: n = get_nproc()
-    if consume: iterable = tuple(iterable)
-    yield from itertools.batched(iterable, (len(iterable)//n)+1)
+    if n is None:
+        n = get_nproc()
+    if n > 1:
+        m, k = divmod(len(iterable), n)
+        m += int(k > 0)
+        yield from itertools.batched(iterable, m)
+    else:
+        yield (iterable, )
 
+
+def pickle_stream(obj_stream, filename, mode='wb'):
+    """Serialize all objects in `obj_stream` to `filename` using pickle"""
+    with open(filename, mode) as file:
+        for obj in obj_stream:
+            pickle.dump(obj, file, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def unpickle_stream(filename):
+    """Deserialize all pickles in a file (inverse of pickle_stream)"""
+    with open(filename, 'rb') as file:
+        while True:
+            try:
+                obj = pickle.load(file)
+            except EOFError:
+                break
+            else:
+                yield obj
 
 
 # TODO: make a cml.formats module for this kind of junk?

@@ -1,4 +1,5 @@
 import pickle
+from cml import pickle_stream, unpickle_stream
 
 
 class Record:
@@ -50,26 +51,64 @@ class Record:
         return cls(*(f(x) for f, x in zip(cls.dtypes, rec)))
 
     @classmethod
-    def from_iter(cls, records, apply_types=False):
+    def to_tuples(cls, records):
+        """Strip the class from an Iterable of records"""
+        return tuple(t.astuple for t in records)
+
+    @classmethod
+    def from_iter(cls, records, apply_types=False, unzip=False):
+        """Apply the class to an Iterable of records"""
+        if unzip:
+            records = zip(*records)
         if apply_types:
             return tuple(cls.apply_types(t) for t in records)
         return tuple(cls(*t) for t in records)
 
-    @classmethod
-    def to_tuples(cls, records):
-        return tuple(t.astuple for t in records)
+    # Pickle read/write pairs:
+    # (to_pickle, from_pickle) - reads/writes single objects
+    # (to_pickle_seq, from_pickle_seq) - read/write single pickled sequence
+    # (to_pickle_stream, etc) - read/write as sequence of pickles
+    def to_pickle(self, filename, mode='wb'):
+        """Write the object tuple (self.astuple) to a file"""
+        with open(filename, mode) as file:
+            pickle.dump(self.astuple, file, protocol=pickle.HIGHEST_PROTOCOL)
 
     @classmethod
-    def from_pkl(cls, filename, header=True):
+    def from_pickle(cls, filename):
+        """Read a single object tuple (cls.astuple) from a file"""
+        with open(filename, 'rb') as file:
+            return cls(*pickle.load(file))
+
+    @classmethod
+    def to_pickle_seq(cls, records, filename, mode='wb', header=False):
+        """Write an Iterable as a single pickled Sequence to a file"""
+        data = cls.to_tuples(records)
+        if header:
+            data.insert(0, cls.fields)
+        with open(filename, mode) as file:
+            pickle.dump(data, file, protocol=pickle.HIGHEST_PROTOCOL)
+
+    @classmethod
+    def from_pickle_seq(cls, filename, header=False):
+        """Read a Sequence from a single pickle in a file"""
         with open(filename, 'rb') as file:
             data = pickle.load(file)
-        # Strip off a "header" object if present
         if header:
             data = data[1:]
         return cls.from_iter(data, apply_types=False)
 
     @classmethod
-    def to_pkl(cls, filename, records):
-        with open(filename, 'wb') as file:
-            pickle.dump(cls.to_tuples(records), file,
-                        protocol=pickle.HIGHEST_PROTOCOL)
+    def to_pickle_stream(cls, records, filename, mode='wb', header=False):
+        """Write an Iterable as a stream of pickles to a file"""
+        with open(filename, mode) as file:
+            if header:
+                pickle.dump(cls.fields, file, protocol=pickle.HIGHEST_PROTOCOL)
+            for r in records:
+                pickle.dump(r.astuple, file, protocol=pickle.HIGHEST_PROTOCOL)
+
+    @classmethod
+    def from_pickle_stream(cls, filename, header=False):
+        """Read a Sequence from a stream of pickles in a file"""
+        stream = unpickle_stream(filename)
+        if header: next(stream)
+        return cls.from_iter(stream)
