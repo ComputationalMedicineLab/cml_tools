@@ -311,15 +311,50 @@ SELECT DISTINCT
     person_id,
     birth_datetime::DATE AS birth_date,
     gender_concept_id,
-    gender_source_value,
     GC.concept_name AS gender_concept_name,
+    gender_source_concept_id,
+    gender_source_value,
     race_concept_id,
-    race_source_value,
-    RC.concept_name AS race_concept_name
+    RC.concept_name AS race_concept_name,
+    race_source_concept_id,
+    race_source_value
 FROM {workspace}.{schema}.core_cohort
 JOIN {source}.{omop}.person P USING (person_id)
 JOIN {source}.{omop}.concept GC ON (P.gender_concept_id = GC.concept_id)
 JOIN {source}.{omop}.concept RC ON (P.race_concept_id = RC.concept_id)
+    ;
+"""
+
+# XXX: Non-OMOP: OMOP's take on Race/Gender is unusable.
+# (1) - they map "unknown" for both race and gender to the "Null" concept,
+# concept_id 0 ("No matching concept"). This is correct sort of, but means that
+# the concept_id is no longer independently interpretable; If I use concept ids
+# as feature labels I don't have independent data channels for "unknown race"
+# and "unknown sex".
+# (2) Furthermore, and much worse, they refuse to provide Race concepts
+# differentiating Unknown, Refused to Answer, Multiple Answers, and Other. All
+# of these (by our current ETL) wind up mapped to the null concept, because
+# that is what OMOP wants. This is unusable.
+#
+# Therefore, we fall back on the original VUMC vocabularies for Gender and
+# Race, for which our upstream ETL people have provided local concept_ids in
+# the > 2_000_000_000 range (all concepts above 2_000_000_000 are "local" and
+# gauranteed not to conflict with standard concepts in the OMOP CDM).
+SELECT_DEMOGRAPHIC_META = """\
+SELECT DISTINCT
+    C.concept_id,
+    C.concept_name,
+    C.domain_id,
+    C.vocabulary_id,
+    C.concept_class_id,
+    C.concept_code,
+    CASE
+        WHEN C.vocabulary_id = 'VUMC Gender' THEN 'Sex'
+        WHEN C.vocabulary_id = 'VUMC Race' THEN 'Race'
+    END AS data_mode,
+    0.0::DOUBLE AS fill_value
+FROM {source}.{omop}.concept C
+WHERE C.vocabulary_id IN ('VUMC Gender', 'VUMC Race')
     ;
 """
 
@@ -335,6 +370,7 @@ TEMPLATES = dict(
     SELECT_CORE_DATA=SELECT_CORE_DATA,
     SELECT_CORE_CONCEPT_META=SELECT_CORE_CONCEPT_META,
     SELECT_CORE_COHORT_DEMOGRAPHICS=SELECT_CORE_COHORT_DEMOGRAPHICS,
+    SELECT_DEMOGRAPHIC_META=SELECT_DEMOGRAPHIC_META,
 )
 
 

@@ -1,3 +1,4 @@
+from collections import defaultdict
 from copy import deepcopy
 
 import numpy as np
@@ -52,6 +53,7 @@ class Log10Scaler:
         np.multiply(X, self.scale[K], out=X)
         np.add(X, self.shift[K], out=X)
         return X
+    __call__ = apply
 
     def apply_inverse(self, X, labels):
         K = self.label_index(labels)

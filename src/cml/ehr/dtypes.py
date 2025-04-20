@@ -50,42 +50,52 @@ class ConceptMeta(Record):
 
 
 class PersonMeta(Record):
-    # These are the default field names produced by our OMOP SQL script
-    # SELECT_CORE_COHORT_DEMOGRAPHICS (cf. cml/ehr/omop_templates.py). Each
-    # member of the cohort is associated with a birthdate and information
-    # relating to sex and race. Typically the only inclusion requirement based
-    # on these three categories (Age, Sex, Race) is that all persons must have
-    # a valid birthdate, usually no earlier than 1920 - we do not generally
-    # accept EHR from the 1700s or 1800s. The concept ids should be keys in the
-    # OMOP concept table; the person ids should be keys in the OMOP person
-    # table (although there exist variations using alternate 'ID'ing strategies
-    # for custom de-identification purposes).
+    # See the SELECT_CORE_COHORT_DEMOGRAPHICS and SELECT_DEMOGRAPHIC_META
+    # templates in ./ehr/omop_templates.py for the exact meanings of these
+    # fields. Typically, all persons are required to have a birthdate in the
+    # Person table >= 1920-01-01 (we do not generally accept EHR from the 1700
+    # or 1800's), and we use VUMC Race / Gender rather than the OMOP "standard"
+    # vocabularies, which are lacking means of differentiating missing and
+    # unknown data from refusal to answer, etc.
     fields = (
-        'person_id', 'birthdate',
-        'gender_concept_id', 'gender_source_value', 'gender_concept_name',
-        'race_concept_id', 'race_source_value', 'race_concept_name',
+        'person_id',
+        'birthdate',
+        'gender_concept_id',
+        'gender_concept_name',
+        'gender_source_concept_id',
+        'gender_source_value',
+        'race_concept_id',
+        'race_concept_name',
+        'race_source_concept_id',
+        'race_source_value',
     )
-    dtypes = (int, datetime.date, int, str, str, int, str, str)
+    dtypes = (int, datetime.date, int, str, int, str, int, str, int, str)
     __slots__ = fields
 
+    # Arguments should match fields exactly
     def __init__(self, person_id, birthdate, gender_concept_id,
-                 gender_source_value, gender_concept_name, race_concept_id,
-                 race_source_value, race_concept_name):
+                 gender_concept_name, gender_source_concept_id,
+                 gender_source_value, race_concept_id, race_concept_name,
+                 race_source_concept_id, race_source_value):
         self.person_id = person_id
         self.birthdate = birthdate
         self.gender_concept_id = gender_concept_id
-        self.gender_source_value = gender_source_value
         self.gender_concept_name = gender_concept_name
+        self.gender_source_concept_id = gender_source_concept_id
+        self.gender_source_value = gender_source_value
         self.race_concept_id = race_concept_id
-        self.race_source_value = race_source_value
         self.race_concept_name = race_concept_name
+        self.race_source_concept_id = race_source_concept_id
+        self.race_source_value = race_source_value
 
+    # Attributes should match fields exactly (boring code but fast)
     @property
     def astuple(self):
         return (self.person_id, self.birthdate, self.gender_concept_id,
-                self.gender_source_value, self.gender_concept_name,
-                self.race_concept_id, self.race_source_value,
-                self.race_concept_name)
+                self.gender_concept_name, self.gender_source_concept_id,
+                self.gender_source_value, self.race_concept_id,
+                self.race_concept_name, self.race_source_concept_id,
+                self.race_source_value)
 
     @classmethod
     def from_frame(cls, df):
