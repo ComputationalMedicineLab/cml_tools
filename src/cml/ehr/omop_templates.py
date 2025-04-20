@@ -302,6 +302,10 @@ ORDER BY M.data_mode, C.concept_id
 """
 
 
+# See the comments below for ref about source concept ids. Particularly, the
+# coalesce is to catch any NULL that snuck past the ETL crew and make sure
+# they're mapped to the appropriate VUMC Gender / Race vocabulary "unknown"
+# concept ids.
 SELECT_CORE_COHORT_DEMOGRAPHICS = """\
 -- Get, for each person in the core cohort, (a) birthdate, (b) sex, (c) race
 -- We include both the source value and concept id; the source values can vary
@@ -312,11 +316,11 @@ SELECT DISTINCT
     birth_datetime::DATE AS birth_date,
     gender_concept_id,
     GC.concept_name AS gender_concept_name,
-    gender_source_concept_id,
+    COALESCE(gender_source_concept_id, 2000003109) AS gender_source_concept_id,
     gender_source_value,
     race_concept_id,
     RC.concept_name AS race_concept_name,
-    race_source_concept_id,
+    COALESCE(race_source_concept_id, 2003603112) AS race_source_concept_id,
     race_source_value
 FROM {workspace}.{schema}.core_cohort
 JOIN {source}.{omop}.person P USING (person_id)

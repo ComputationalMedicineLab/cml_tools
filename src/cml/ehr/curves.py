@@ -309,3 +309,107 @@ def legacy_curve_gen(data, start=None, until=None, window=365, validate=False,
 
     return CurveSet(person_id=data.ptid[0], concepts=all_channels,
                     curves=curves, grid=grid_range_args(grid))
+
+
+def calculate_age_stats(space, cohort):
+    """
+    A cohort is a set of PersonMeta records, each of which defines a birthdate.
+    Since a SampleSpace calculates the min and max dates per person in an
+    implied cohort, the most convenient way to get the mean and stdev Age over
+    the cohort curves is as a function of the SampleSpace and the cohort. See
+    `cml.ehr.samplespace` and `cml.ehr.dtypes` for SampleSpace and PersonMeta
+    objects.
+
+    Returns a 2-tuple of floats, `(mean, stdev)`, for Age over the dates
+    spanned by the given cohort, measured in fractional years.
+    """
+    D = {p.person_id: np.datetime64(p.birthdate) for p in cohort}
+    D = np.array([D[i] for i in space.ids])
+    D = space.dates - D[:, None]
+
+    # Calculate in two passes. On sizeable datasets (which we expect) directly
+    # instantiating the Age curves and passing them to np.mean / np.std is
+    # slightly faster (it takes about 80-90% the time) but often requires
+    # upwards of 100 Gb. So first we get the mean then var.
+    n, m, s = 0, 0, 0
+    for row in D:
+        dr = np.arange(*row).astype(float) / 365.25
+        m += np.sum(dr)
+        n += len(dr)
+    m /= n
+    for row in D:
+        dr = np.square((np.arange(*row).astype(float) / 365.25) - m)
+        s += np.sum(dr)
+    s = np.sqrt(s/n)
+    return m, s
+
+
+def build_age_curve(index, cohort, age_mean=0.0, age_sdev=1.0, unit=365.25):
+    """
+    Index is a DateSampleIndex or equivalent data structure which specifies the
+    (person_id, date) pairs which index a given dataset. Cohort is an iterable
+    of PersonMeta objects which provide demographic information about the
+    persons in the cohort, including birthdate. Alternately, cohort is a
+    dictionary mapping person_ids to np.datetime64 birthdates. age_mean and
+    age_sdev are the mean and standard deviation to use in scaling the age
+    curve.
+
+    Returns the age curve, an ndarray of len(index.data) and dtype float,
+    corresponding to the sample points in `index`. The curve is centered and
+    scaled to unit stdev.
+
+    Precomputing the person-birthdate mapping can save time when building age
+    curves for many index sets (cohort in example below has approx 2.5 million
+    persons, and index contains 600_000 sample points from approx 97 thousand
+    unique persons):
+
+    In [5]: %time age_map = {p.person_id: np.datetime64(p.birthdate) for p in cohort}
+    CPU times: user 3.52 s, sys: 52.8 ms, total: 3.57 s
+    Wall time: 3.59 s
+
+    In [6]: %time age_curve = build_age_curve(index, cohort, age_mean, age_sdev)
+    CPU times: user 6.33 s, sys: 71.8 ms, total: 6.4 s
+    Wall time: 6.43 s
+
+    In [7]: %time age_curve = build_age_curve(index, age_map, age_mean, age_sdev)
+    CPU times: user 2.74 s, sys: 19.9 ms, total: 2.76 s
+    Wall time: 2.77 s
+    """
+    if not isinstance(cohort, dict):
+        D = {p.person_id: np.datetime64(p.birthdate) for p in cohort}
+    else:
+        D = cohort
+    D = np.array([date-D[person] for person, date in index.data], dtype=float)
+    D /= unit
+    if age_mean is not None: D -= age_mean
+    if age_sdev is not None: D /= age_sdev
+    return D
+
+
+def build_demographic_curves(index, cohort, concepts=None):
+    """
+    Index is a DateSampleIndex or equivalent data structure which specifies the
+    (person_id, date) pairs which index a given dataset. Cohort is an iterable
+    of PersonMeta objects which provide demographic information about the
+    persons in the cohort, including race and sex concept ids.
+    """
+    genders = {p.person_id: p.gender for p in cohort}
+    races = {p.person_id: p.race for p in cohort}
+
+    # If not given, learn from the cohort data
+    if concepts is None:
+        concepts = np.union1d(list(set(genders.values())),
+                              list(set(races.values())))
+
+    # 2x faster lookups this way than with list.index or tuple.index; 10-20x
+    # faster than the np idiom with max(arr == item) at this size (we expect
+    # concepts to only have 10 to 20 elements). On larger arr np starts to win.
+    concept_map = {c: i for i, c in enumerate(concepts.tolist())}
+
+    # TODO: this could be faster
+    curves = np.zeros((len(concepts), len(index.data)))
+    for person_id in np.unique(index.data['person_id']):
+        mask = person_id == index.data['person_id']
+        curves[concept_map[genders[person_id]], mask] = 1.0
+        curves[concept_map[races[person_id]], mask] = 1.0
+    return concepts, curves

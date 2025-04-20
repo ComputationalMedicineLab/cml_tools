@@ -97,6 +97,16 @@ class PersonMeta(Record):
                 self.race_concept_name, self.race_source_concept_id,
                 self.race_source_value)
 
+    # These are for convenience, and also enable customization of which
+    # attribute should be used as gender or race concept ids.
+    @property
+    def race(self):
+        return self.race_source_concept_id
+
+    @property
+    def gender(self):
+        return self.gender_source_concept_id
+
     @classmethod
     def from_frame(cls, df):
         """Attempt to extract a Person record from the v1 dataframe format"""

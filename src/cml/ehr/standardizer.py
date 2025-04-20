@@ -44,6 +44,7 @@ class Log10Scaler:
         return K
 
     def apply(self, X, labels):
+        """Operates *in-place*!"""
         # What if not every label has an entry in self.labels? Do nothing by
         # default? Make ones/zeros and overwrite with scale/shift?
         K = self.label_index(labels)
@@ -107,16 +108,26 @@ def make_log10scaler(base_stat: IncrStats,
         # np.unique(v) is equivalent to np.array(sorted(set(v)))
         mode_labels = {k: np.unique(v) for k, v in mode_labels.items()}
         for mode, params in mode_params.items():
-            labels = mode_labels[mode]
+            # If there are no mapped labels then this mode doesn't exist, so
+            # its parameters don't matter. Just skip ahead.
+            if (labels := mode_labels.get(mode)) is None:
+                continue
             if params.get('postfill'):
                 if n_obs is None:
                     raise ValueError('n_obs required with "postfill"')
                 fill = params.get('fill', 0.0)
                 base_stat = extend_obs(base_stat, n_obs, fill, labels)
-                lg10_stat = extend_obs(lg10_stat, n_obs, np.log10(fill), labels)
+                # If this mode isn't set to use log, or log10(fill) isn't a
+                # real, finite number, then don't bother crunching these
+                # numbers for the log transformed stats
+                if fill > 0 and params.get('log'):
+                    lg10_fill = np.log10(fill)
+                    lg10_stat = extend_obs(lg10_stat, n_obs, lg10_fill, labels)
             if params.get('agg_mode'):
                 base_stat = concat_obs(base_stat, labels)
-                lg10_stat = concat_obs(lg10_stat, labels)
+                # Again, don't waste time doing this unless the mode wants log
+                if params.get('log'):
+                    lg10_stat = concat_obs(lg10_stat, labels)
         # This isn't available if the `if` never triggered
         del mode_labels
 
