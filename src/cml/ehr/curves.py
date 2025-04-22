@@ -1,6 +1,6 @@
 """Functions for constructing longitudinal curves specifically over EHR data"""
-from collections import namedtuple
 from functools import partial
+from numbers import Number
 
 import numpy as np
 import pandas as pd
@@ -344,7 +344,7 @@ def calculate_age_stats(space, cohort):
     return m, s
 
 
-def build_age_curve(index, cohort, age_mean=0.0, age_sdev=1.0, unit=365.25):
+def build_age_curve(index, cohort, age_mean=None, age_sdev=None, unit=365.25):
     """
     Index is a DateSampleIndex or equivalent data structure which specifies the
     (person_id, date) pairs which index a given dataset. Cohort is an iterable
@@ -381,35 +381,26 @@ def build_age_curve(index, cohort, age_mean=0.0, age_sdev=1.0, unit=365.25):
         D = cohort
     D = np.array([date-D[person] for person, date in index.data], dtype=float)
     D /= unit
-    if age_mean is not None: D -= age_mean
-    if age_sdev is not None: D /= age_sdev
+    # Don't do useless work: x-0 and x/1 are identity ops
+    if age_mean is not None and age_mean != 0.0: D -= age_mean
+    if age_sdev is not None and age_sdev != 1.0: D /= age_sdev
     return D
 
 
-def build_demographic_curves(index, cohort, concepts=None):
+def build_demographic_curves(index, demos, concepts):
+    """One-hot encodes the demographics of a given index.
+
+    "index" is a DateSampleIndex or equivalent data structure specifying pairs of
+    (person_id, date/time) for some data set. "demos" is a mapping from
+    demographic concept ids (or channel labels) to person ids. "concepts" is
+    the universe of demographic concepts over which to operate, it is therefore
+    the labelling of the rows of the output ndarray. Any element of "concepts"
+    not also a key of "demos" (or a key to an empty list) will be identically
+    zero. The output ndarray is of shape "[len(concepts), len(index)]".
     """
-    Index is a DateSampleIndex or equivalent data structure which specifies the
-    (person_id, date) pairs which index a given dataset. Cohort is an iterable
-    of PersonMeta objects which provide demographic information about the
-    persons in the cohort, including race and sex concept ids.
-    """
-    genders = {p.person_id: p.gender for p in cohort}
-    races = {p.person_id: p.race for p in cohort}
-
-    # If not given, learn from the cohort data
-    if concepts is None:
-        concepts = np.union1d(list(set(genders.values())),
-                              list(set(races.values())))
-
-    # 2x faster lookups this way than with list.index or tuple.index; 10-20x
-    # faster than the np idiom with max(arr == item) at this size (we expect
-    # concepts to only have 10 to 20 elements). On larger arr np starts to win.
-    concept_map = {c: i for i, c in enumerate(concepts.tolist())}
-
-    # TODO: this could be faster
+    dmap = {k: np.isin(index.data['person_id'], v) for k, v in demos.items()}
     curves = np.zeros((len(concepts), len(index.data)))
-    for person_id in np.unique(index.data['person_id']):
-        mask = person_id == index.data['person_id']
-        curves[concept_map[genders[person_id]], mask] = 1.0
-        curves[concept_map[races[person_id]], mask] = 1.0
+    for i, c in enumerate(concepts):
+        if c in dmap:
+            curves[i, dmap[c]] = 1.0
     return concepts, curves

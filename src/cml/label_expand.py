@@ -3,7 +3,7 @@ import numpy as np
 
 
 # TODO: rewrite this dostring
-def expand(data, labels=None, fills=None):
+def expand(data, labels=None, fills=None, out=None):
     """
     `data` is a sequence of 4-tuples of (id, observation labels, feature
     labels, values). `values` is an ndarray of shape [num features, num
@@ -32,7 +32,11 @@ def expand(data, labels=None, fills=None):
     # DateSampleIndex, do something like this:
     # >>> DateSampleIndex.from_arrays(index[0], index[1], sort=False)
     index = np.empty((2, col_dim))
-    X = np.tile(fill_vec, (1, col_dim))
+    if out is None:
+        X = np.tile(fill_vec, (1, col_dim))
+    else:
+        X = out
+        X[:] = fill_vec
 
     base = 0
     for (id_, obs, feats, values) in data:

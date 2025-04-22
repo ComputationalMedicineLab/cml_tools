@@ -26,7 +26,8 @@ DEFAULT_MODE_PARAMS = {
 
 
 class Log10Scaler:
-    __slots__ = ('labels', 'shift', 'scale', 'log10', 'eps')
+    fields = ('labels', 'shift', 'scale', 'log10', 'eps')
+    __slots__ = fields
 
     def __init__(self, labels, shift, scale, log10, eps=1e-6):
         self.labels = labels

@@ -72,17 +72,23 @@ class DateSampleIndex:
 
 
 class SampleSpace(Record):
-    fields = ('ids', 'indices', 'dates')
+    fields = ('ids', 'indices', 'dates', '_index_map')
     __slots__ = fields
 
     def __init__(self, ids, indices, dates):
         self.ids = np.array(ids)
         self.indices = np.array(indices)
         self.dates = np.array(dates)
+        self._index_map = {p: ij for p, ij, _ in self}
 
     @property
     def astuple(self):
         return (self.ids, self.indices, self.dates)
+
+    @property
+    def index_map(self):
+        """Maps person_ids to their (i, j) indices in the EHR.data recarray"""
+        return self._index_map
 
     @classmethod
     def from_ehr(cls, ehr):
@@ -106,6 +112,8 @@ class SampleSpace(Record):
     def __iter__(self):
         yield from zip(self.ids, self.indices, self.dates)
 
+    # TODO: do I use this functionality? Would I rather a SampleSpace be a
+    # Mapping than a Sequence? (i.e.: treat index as a person_id)
     def __getitem__(self, index):
         return (self.ids[index], self.indices[index], self.dates[index])
 

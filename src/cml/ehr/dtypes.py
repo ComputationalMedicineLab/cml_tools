@@ -1,6 +1,7 @@
 """EHR related datatypes"""
 import datetime
-from operator import itemgetter
+from collections import defaultdict
+from operator import attrgetter
 
 import numpy as np
 from cml.record import Record
@@ -106,6 +107,15 @@ class PersonMeta(Record):
     @property
     def gender(self):
         return self.gender_source_concept_id
+
+    @classmethod
+    def cohort_demographic_map(cls, cohort):
+        """Produce a mapping from race and gender concepts to person ids"""
+        demo = defaultdict(list)
+        for p in sorted(cohort, key=attrgetter('person_id')):
+            demo[p.gender].append(p.person_id)
+            demo[p.race].append(p.person_id)
+        return {k: np.array(demo[k]) for k in sorted(demo)}
 
     @classmethod
     def from_frame(cls, df):
