@@ -53,23 +53,21 @@ def iter_batches(iterable, n=None):
         yield (iterable, )
 
 
-def pickle_stream(obj_stream, filename, mode='wb'):
-    """Serialize all objects in `obj_stream` to `filename` using pickle"""
-    with open(filename, mode) as file:
-        for obj in obj_stream:
-            pickle.dump(obj, file, protocol=pickle.HIGHEST_PROTOCOL)
+def pickle_stream(iterable, stream):
+    """Serialize all objects in `iterable` to `stream` using pickle"""
+    for obj in iterable:
+        pickle.dump(obj, stream, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def unpickle_stream(filename):
-    """Deserialize all pickles in a file (inverse of pickle_stream)"""
-    with open(filename, 'rb') as file:
-        while True:
-            try:
-                obj = pickle.load(file)
-            except EOFError:
-                break
-            else:
-                yield obj
+def unpickle_stream(stream):
+    """Deserialize all pickles in a binary stream (inverse of pickle_stream)"""
+    while True:
+        try:
+            obj = pickle.load(stream)
+        except EOFError:
+            break
+        else:
+            yield obj
 
 
 def npy_peek(filename):
