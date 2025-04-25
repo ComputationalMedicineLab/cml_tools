@@ -383,16 +383,16 @@ TEMPLATES = dict(
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--outdir', '-o', type=pathlib.Path, default=None)
-    parser.add_argument('--workspace', '-w', type=str)
-    parser.add_argument('--schema', '-s', type=str)
-    parser.add_argument('--source', '-v', type=str)
-    parser.add_argument('--omop', '-p', type=str)
-    parser.add_argument('--debug', '-d', action='store_true')
+    parser.add_argument('--outdir', type=pathlib.Path, default=None)
+    parser.add_argument('--workspace', type=str)
+    parser.add_argument('--schema', type=str)
+    parser.add_argument('--source', type=str)
+    parser.add_argument('--omop', type=str)
+    parser.add_argument('--debug', action='store_true')
     # A filter on patient birthdates. Used mostly to exclude erroneous entries.
-    parser.add_argument('--birth-datetime', '-b', default='1920-01-01')
+    parser.add_argument('--birth-datetime', default='1920-01-01')
     # A filter on entry date of data
-    parser.add_argument('--start-date', '-d', default='2000-01-01')
+    parser.add_argument('--start-date', default='2000-01-01')
     args = parser.parse_args()
     pprint.pprint(vars(args))
 
