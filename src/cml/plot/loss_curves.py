@@ -3,9 +3,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def plot_epoch_losses(train_loss=None, test_loss=None, *, model_id='',
+def plot_epoch_losses(train_loss=None, test_loss=None, *, ax=None,
                       reshape=None, agg=np.mean, a_min=None, a_max=None,
-                      ax=None, marker='o', alpha=0.25, mark_min=True):
+                      mark_min=True, shift_curves=True, show_legend=True,
+                      min_in_label=True,
+                      # Options forwarded to each curve's plotting functions
+                      train_plot_kws=None, test_plot_kws=None,
+                      train_mark_kws=None, test_mark_kws=None):
     """
     Each loss array (`train_loss` and `test_loss`) is a 2-dim ndarray of
     loss values of dimensions `[epochs, values]`. `values` can be loss values
@@ -13,6 +17,26 @@ def plot_epoch_losses(train_loss=None, test_loss=None, *, model_id='',
     """
     if train_loss is None and test_loss is None:
         raise ValueError('Provide at least one of train_loss or test_loss')
+
+    # Plotting and minimum-marker default arguments. By default, the line plots
+    # are solid at alpha 0.25 with circle markers at the actual values, and the
+    # min-epoch is marked with an orange (or 'C1') 'x' at alpha 0.5.
+    if train_plot_kws is None: train_plot_kws = {}
+    if train_mark_kws is None: train_mark_kws = {}
+    if test_plot_kws is None: test_plot_kws = {}
+    if test_mark_kws is None: test_mark_kws = {}
+
+    for _d in (train_plot_kws, test_plot_kws):
+        _d.setdefault('alpha', 0.25)
+        _d.setdefault('marker', 'o')
+
+    for _d in (train_mark_kws, test_mark_kws):
+        _d.setdefault('alpha', 0.5)
+        _d.setdefault('marker', 'x')
+        _d.setdefault('color', 'C1')
+
+    train_plot_kws.setdefault('label', 'Train')
+    test_plot_kws.setdefault('label', 'Test')
 
     # plt.figure(figsize=(12, 4)); or (9, 3), etc - is usually the right dim.
     if ax is None:
@@ -61,20 +85,22 @@ def plot_epoch_losses(train_loss=None, test_loss=None, *, model_id='',
         ys1 = np.clip(ys1, a_min=a_min, a_max=a_max)
 
     # x-axis should now have a point per epoch. Plot the loss curves at last.
-    def plot_curve(ys, name):
-        xs = np.arange(1, len(ys)+1)
+    def plot_curve(ys, plot_kws, mark_kws, shift=1):
+        xs = np.arange(len(ys)) + shift
         ys_min = np.min(ys)
-        ys_argmin = np.argmin(ys)+1
-        label = f'{name} Loss (min {ys_min:.4f}; {ys_argmin})'
-        ax.plot(xs, ys, marker=marker, alpha=alpha, label=label)
+        ys_argmin = np.argmin(ys) + shift
+        if min_in_label:
+            plot_kws['label'] += f' ({ys_min:.4f}; {ys_argmin})'
+        ax.plot(xs, ys, **plot_kws)
         if mark_min:
-            ax.scatter(ys_argmin, ys_min, color='C1', marker='x')
+            ax.scatter(ys_argmin, ys_min, **mark_kws)
 
     if train_loss is not None:
-        plot_curve(ys0, f'{model_id} Train')
+        shift = 0.5 if shift_curves else 1
+        plot_curve(ys0, train_plot_kws, train_mark_kws, shift)
 
     if test_loss is not None:
-        plot_curve(ys1, f'{model_id} Test')
+        plot_curve(ys1, test_plot_kws, test_mark_kws)
 
     # Get the aggregation function name: if it exists, format it. Set title.
     if (name := getattr(agg, '__name__', '')):
@@ -86,7 +112,8 @@ def plot_epoch_losses(train_loss=None, test_loss=None, *, model_id='',
     else:
         title = f'{name}Train/Test Loss per Epoch'
 
-    ax.legend()
+    if show_legend:
+        ax.legend()
     ax.set_xlabel('Epoch')
     ax.set_ylabel(f'{name}Loss')
     ax.set_title(title)
