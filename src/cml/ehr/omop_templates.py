@@ -240,21 +240,24 @@ CREATE TABLE {workspace}.{schema}.core_cohort AS (
 
 SELECT_CORE_DATA = """\
 WITH core_data AS (
-    SELECT DISTINCT person_id, date, concept_id, NULL::DOUBLE AS value
+    SELECT DISTINCT person_id, date, concept_id, NULL AS value
     FROM {workspace}.{schema}.conditions
         UNION
-    SELECT DISTINCT person_id, date, concept_id, NULL::DOUBLE AS value
+    SELECT DISTINCT person_id, date, concept_id, NULL AS value
     FROM {workspace}.{schema}.medications
         UNION
-    SELECT DISTINCT person_id, date, concept_id, value::DOUBLE
+    SELECT DISTINCT person_id, date, concept_id, value
     FROM {workspace}.{schema}.measurements
 )
 SELECT DISTINCT
-    person_id, date, concept_id, value
+    person_id,
+    concept_id,
+    date::TIMESTAMP_NTZ AS datetime,
+    value::DOUBLE
 FROM core_data
 JOIN {workspace}.{schema}.core_concepts USING (concept_id)
 JOIN {workspace}.{schema}.core_cohort USING (person_id)
-ORDER BY person_id, concept_id, date
+ORDER BY person_id, concept_id, datetime
     ;
 """
 

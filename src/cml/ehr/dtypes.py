@@ -1,10 +1,16 @@
 """EHR related datatypes"""
 import datetime
+import warnings
 from collections import defaultdict
+from functools import cached_property
+from multiprocessing.managers import SharedMemoryManager
 from operator import attrgetter
 
 import numpy as np
-from cml.record import Record
+import numpy.lib.format as npf
+
+from cml import wrapdtypes
+from cml.record import Record, SOA
 
 
 class ConceptMeta(Record):
@@ -98,8 +104,9 @@ class PersonMeta(Record):
                 self.race_concept_name, self.race_source_concept_id,
                 self.race_source_value)
 
-    # These are for convenience, and also enable customization of which
-    # attribute should be used as gender or race concept ids.
+    # These are for convenience, and also to enable customization of which
+    # attribute should be used as gender or race concept ids; the "source
+    # concept ids" currently being used map to VUMC Race / Gender vocabs.
     @property
     def race(self):
         return self.race_source_concept_id
@@ -108,15 +115,7 @@ class PersonMeta(Record):
     def gender(self):
         return self.gender_source_concept_id
 
-    @classmethod
-    def cohort_demographic_map(cls, cohort):
-        """Produce a mapping from race and gender concepts to person ids"""
-        demo = defaultdict(list)
-        for p in sorted(cohort, key=attrgetter('person_id')):
-            demo[p.gender].append(p.person_id)
-            demo[p.race].append(p.person_id)
-        return {k: np.array(demo[k]) for k in sorted(demo)}
-
+    # FIXME: needs to work with new format using VUMC Race and Gender vocabs
     @classmethod
     def from_frame(cls, df):
         """Attempt to extract a Person record from the v1 dataframe format"""
@@ -152,66 +151,78 @@ class PersonMeta(Record):
                    race_source_value, None)
 
 
-# The main dtype:
-# There *will* be variations: most likely person_id and concept_id which need
-# to be strings. The variations can all live here in this file with whatever
-# functions are needed for IO and interopability.
-class EHR:
-    dtype = np.dtype([('person_id', np.int64),
-                      ('concept_id', np.int64),
-                      ('date', np.dtype('<M8[D]')),
-                      ('value', np.double)])
+class Cohort(tuple):
+    """
+    A convenience container for a tuple of PersonMeta objects which computes
+    (and caches) some aggregate information about the Cohort demographics and
+    other information which does not depend upon a specific underlying EHR
+    object. Cohort objects should (usually) be considered immutable singletons;
+    the tools in cml.ehr.samplespace are more tuned for creating subsets of the
+    cohort and sampling points from the EHR.
 
-    __slots__ = ('data',)
-    def __init__(self, data):
-        self.data = data
+    As a tuple subclass, all sequencing methods will work, but it is then the
+    programmer's responsibility to maintain the Cohort class wrapper:
 
-    # We need this b/c using arrow is the only efficient way to get data from
-    # databricks-sql-connector, even though arrow itself is... cumbersome.
-    @classmethod
-    def from_arrow(cls, table):
-        """Construct a recarray of EHR.dtype from a pyarrow.Table"""
-        return cls(np.rec.fromarrays([
-            table.column('person_id').to_numpy(),
-            table.column('concept_id').to_numpy(),
-            table.column('date').to_numpy(),
-            table.column('value').fill_null(np.nan).to_numpy(),
-        ], dtype=cls.dtype))
+        >>> type(cohort)
+        cml.ehr.dtypes.Cohort
+        >>> # Will lose the type information:
+        >>> subset = cohort[:10]
+        >>> type(subset)
+        tuple
+        >>> # In order to keep the container class:
+        >>> subset = Cohort(cohort[:10])
+        >>> type(subset)
+        cml.ehr.dtypes.Cohort
 
-    @classmethod
-    def from_npy(cls, filename):
-        """Load a recarray of EHR.dtype from a .npy file"""
-        return cls(np.rec.array(np.load(filename), dtype=cls.dtype, copy=False))
-
-    def to_npy(self, filename):
-        """Persist self.data to a .npy file"""
-        np.save(filename, self.data)
+    Also, be aware that each instance will have its own cached properties.
+    """
+    def to_pickle(self, filename, header=False):
+        """Convenience driver for PersonMeta.to_pickle_seq"""
+        PersonMeta.to_pickle_seq(self, filename, header=header)
 
     @classmethod
-    def from_records(cls, records, sort=True):
-        """Construct a recarray of EHR.dtype from tuples"""
-        if sort: records = sorted(records)
-        return cls(np.rec.fromrecords(records, dtype=cls.dtype))
+    def from_pickle(cls, filename, header=False):
+        """Convenience driver for PersonMeta.from_pickle_seq"""
+        return cls(PersonMeta.from_pickle_seq(filename, header=header))
 
-    # XXX: split into a from_sharedmem classmethod and load_into_mem inst meth?
-    @classmethod
-    def wrap_sharedmem(cls, mem, shape, source=None):
-        """
-        Wraps a multiprocessing SharedMemory buffer with the appropriate dtype.
-        This happens in two steps: first one must wrap the memory buffer with
-        an np.ndarray using the buffer keyword argument, then one is able to
-        wrap the ndarray with an np.rec.array. This function should make no
-        copies of the underlying memory buffer.
+    @cached_property
+    def by_person_id(self):
+        """A dict mapping person ids to PersonMeta objects"""
+        return {p.person_id: p for p in self}
 
-        If `source` is not None then the contents of source are copied into the
-        shared memory buffer (i.e., this is how the shared data is loaded into
-        the shared memory space in the first place).
-        """
-        data = np.ndarray(shape, dtype=cls.dtype, buffer=mem.buf)
-        if source is not None:
-            data[:] = source
-        return cls(np.rec.array(data, dtype=cls.dtype, copy=False))
+    @cached_property
+    def birthdays(self):
+        """A dict mapping person ids to np.datetime64 birthdates"""
+        return {p.person_id: np.datetime64(p.birthdate) for p in self}
 
+    @cached_property
+    def demographics(self):
+        """A dict mapping race and gender concepts to ndarrays of person ids"""
+        demo = defaultdict(list)
+        for p in sorted(self, key=attrgetter('person_id')):
+            demo[p.gender].append(p.person_id)
+            demo[p.race].append(p.person_id)
+        return {k: np.array(demo[k]) for k in sorted(demo)}
+
+
+class EHR(SOA):
+    """An "Electronic Health Record" styled as a Structure-of-Arrays"""
+    fields = ('person_id', 'concept_id', 'datetime', 'value')
+    dtypes = wrapdtypes('i8', 'i8', 'M8[s]', 'f8')
+    __slots__ = fields
+
+    def __init__(self, person_id, concept_id, datetime, value):
+        self.person_id = person_id
+        self.concept_id = concept_id
+        self.datetime = datetime
+        self.value = value
+
+    @property
+    def astuple(self):
+        """Return the object values as a tuple in field order"""
+        return (self.person_id, self.concept_id, self.datetime, self.value)
+
+    # FIXME: needs to work with new format using VUMC Race and Gender vocabs
     @classmethod
     def from_frame(cls, df, meta, hash_person_id=True, strict=False):
         """

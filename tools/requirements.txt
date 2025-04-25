@@ -8,21 +8,24 @@ matplotlib
 seaborn
 jupyter
 ipython
-bottleneck
+scikit-learn
 line_profiler
 
-# Scikit-learn
-scikit-learn
-
-# Database (etc.) tools
+# Database tools (see ./build_env.sh for databricks)
 pyodbc
 psycopg2-binary
 pyarrow
 
-# Intel Libraries
+# Intel BLAS/LAPACK and related Libraries
 mkl
 mkl-devel
 mkl-include
 intel-openmp
+
+# Misc other small libraries (and why included, if not obvious from name)
+# Many nan-related numpy functions much faster than in numpy
+bottleneck
+# ISA-L bindings (Intelligent Storage Acceleration Library - i.e., for gzip)
+isal
 
 # vim: ft=sh

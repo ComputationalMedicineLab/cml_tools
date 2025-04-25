@@ -16,8 +16,8 @@ import numpy as np
 
 from cml import init_logging, get_nproc
 from cml.ehr.curves import build_ehr_curves, compress_curves, select_cross_section
-from cml.ehr.dtypes import ConceptMeta, EHR
-from cml.ehr.samplespace import DateSampleIndex, SampleSpace, sample_uniform
+from cml.ehr.dtypes import Cohort, ConceptMeta, EHR
+from cml.ehr.samplespace import SampleIndex, SampleSpace, sample_uniform
 from cml.stats.incremental import collect, merge
 
 # If the process has already been restricted to the right number of physical
@@ -101,7 +101,7 @@ def run_curves(data, meta, stats=None, window=365):
     return results, (base_stats, lg10_stats)
 
 
-def worker(proc_num, input_batch, mem, lock, queue, meta, shape, specs, args):
+def worker(proc_num, input_batch, mem, lock, queue, meta, shapes, specs, args):
     n = len(input_batch)
     w = len(str(n))
     log_id = f'[{os.getpid()}][{proc_num:3}]'
@@ -125,7 +125,7 @@ def worker(proc_num, input_batch, mem, lock, queue, meta, shape, specs, args):
     # up" the CPU timer so the first pairs of timings isn't slow
     perf_counter()
 
-    data = EHR.wrap_sharedmem(mem, shape).data
+    data = EHR.wrap_shared_memory(shapes, mem)
     for total, (person_id, i, j) in enumerate(input_batch, start=1):
         # Select the patient EHR and verify its all for one patient. If
         # this assert fails then check that the source data is sorted.
@@ -235,7 +235,7 @@ def cli():
         DEST must be a valid, writable filename, where the evaluated sample
         points will be placed. If both SRC and NUM are given, then a
         SampleSpace is loaded from SRC and NUM samples are drawn uniformly at
-        random from the sample space. If only SRC is given, a DateSampleIndex
+        random from the sample space. If only SRC is given, a SampleIndex
         is loaded from SRC which specifies exactly the patient dates to sample.
         If only NUM is specified, then NUM samples are draw from the "default"
         sample space (i.e. the entire set of patient-dates defined by the
@@ -301,7 +301,7 @@ def cli():
     meta = ConceptMeta.from_pickle_seq(args.metafile)
 
     logging.info('Loading main EHR data from %s', args.datafile)
-    ehr = EHR.from_npy(args.datafile).data
+    ehr = EHR.from_npz(args.datafile)
 
     logging.info('Creating default SampleSpace from the EHR')
     default_space = SampleSpace.from_ehr(ehr)
@@ -318,28 +318,29 @@ def cli():
         for out, inp, num in args.samplespec:
             logging.debug(f'Spec: {inp=} {num=} {out=}')
             if num is None:
-                logging.info(f'Loading DateSampleIndex from {inp=}')
-                sample_index = DateSampleIndex.from_pickle(inp, sort=True)
+                logging.info(f'Loading SampleIndex from {inp=}')
+                sample_index = SampleIndex.from_npz(inp)
             else:
                 # Enable sampling the same space repeatedly without reloading
                 # it from disk (if inp is None then spaces contains the default
                 # space; aka the whole sampling space over the EHR).
                 if inp not in spaces:
                     logging.info(f'Loading SampleSpace from {inp=}')
-                    space = SampleSpace.from_pickle(inp)
+                    space = SampleSpace.from_npz(inp)
                     spaces[inp] = space
                 space = spaces[inp]
                 logging.info(f'Selecting {num=} points from the space')
-                sample_index = sample_uniform(space, num)
-            specs.append((sample_index.split_by_person(asdict=True), out))
+                with space.dt_unit_ctx('D'):
+                    sample_index = sample_uniform(space, num)
+            specs.append((sample_index.mapping, out))
         del spaces, sample_index
     else:
         specs = []
 
     with SharedMemoryManager() as smm:
+        # cf. record.SOA: make_shared_memory and wrap_shared_memory
         logging.info('Moving EHR into shared memory')
-        mem = smm.SharedMemory(ehr.nbytes)
-        EHR.wrap_sharedmem(mem, ehr.shape, source=ehr)
+        mem, _ = ehr.make_shared_memory(smm)
 
         logging.info(f'Starting {len(batches)} subprocesses')
         lock = Lock()
@@ -347,7 +348,7 @@ def cli():
         procs = []
         for i, id_batch in enumerate(batches):
             procs.append(Process(target=worker, daemon=True, args=(
-                i, id_batch, mem, lock, queue, meta, ehr.shape, specs, args
+                i, id_batch, mem, lock, queue, meta, ehr.arr_shapes, specs, args
             )))
             procs[-1].start()
 

@@ -1,4 +1,6 @@
 # Miscellaneous utilities and small funcs can go here
+# TODO: make a cml.formats module for some of this junk?
+import collections
 import itertools
 import logging
 import os
@@ -6,6 +8,7 @@ import pickle
 import sys
 
 import numpy as np
+import numpy.lib.format as npf
 import pandas as pd
 
 
@@ -69,7 +72,22 @@ def unpickle_stream(filename):
                 yield obj
 
 
-# TODO: make a cml.formats module for this kind of junk?
+def npy_peek(filename):
+    """Returns the shape, fortran order, and dtype of an .npy file"""
+    npy_header = collections.namedtuple('npy_header', 'shape f_order dtype')
+    with open(filename, 'rb') as file:
+        match (magic := npf.read_magic(file)):
+            case (1, _): header = npf.read_array_header_1_0(file)
+            case (2, _): header = npf.read_array_header_2_0(file)
+            case _: raise ValueError(f'cannot parse {filename=} {magic=}')
+    return npy_header(*header)
+
+
+def wrapdtypes(*codes):
+    """Make sure all input arguments are well behaved np.dtype objects"""
+    return tuple(map(np.dtype, codes))
+
+
 def df_to_np(curves: pd.DataFrame):
     """Decompose a pd.DataFrame to a dict of np.ndarrays"""
     return dict(values=curves.to_numpy(),

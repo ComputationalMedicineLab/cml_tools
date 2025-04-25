@@ -5,7 +5,8 @@ from numbers import Number
 import numpy as np
 import pandas as pd
 
-from cml.ehr.dtypes import ConceptMeta
+from cml.ehr.dtypes import Cohort, ConceptMeta, EHR
+from cml.ehr.samplespace import SampleIndex, SampleSpace
 from cml.record import Record
 from cml.time_curves import binary_signal, event_intensity, pchip_regression
 
@@ -125,27 +126,17 @@ def select_cross_section(curveset, dates):
     return CurvePointSet(curveset.person_id, dates, concepts, values)
 
 
-def split_by_concept_id(data, assume_sorted=True):
-    """Returns views on data grouped by concept_id"""
-    if not assume_sorted:
-        data = data[np.argsort(data['concept_id'])]
-    ids, positions = np.unique(data['concept_id'], return_index=True)
-    groups = np.split(data, positions[1:])
-    assert sum(len(x) for x in groups) == len(data)
-    return groups, ids, positions
-
-
-def construct_date_range(data, start=None, until=None, from_df=False):
+def construct_date_range(data: EHR, start=None, until=None, from_df=False):
     """Construct a date range at daily resolution for the EHR in `data`"""
     # Old-style storage for patient EHR was as dataframes with five columns:
     # ['patient_id', 'date', 'mode', 'channel', 'value']. *All* patient EHR was
     # stored here, including Age, Sex, Race, for which the date column was NaT.
-    # If the data is not a dataframe it is assumed to be an EHR.dtype recarray.
-    dts = data['date'].to_numpy() if from_df else data.date
+    # If the data is not a dataframe it is assumed to be an EHR object.
+    dts = data['date'].to_numpy() if from_df else data.datetime
     if start is None: start = np.nanmin(dts)
     if until is None: until = np.nanmax(dts)
-    start = start.astype(np.dtype('<M8[D]'))
-    until = until.astype(np.dtype('<M8[D]')) + 1
+    start = start.astype(np.dtype('M8[D]'))
+    until = until.astype(np.dtype('M8[D]')) + 1
     return np.arange(start, until)
 
 
@@ -176,11 +167,6 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
 
     Returns a CurveSet.
     """
-    # TODO: think about how best to handle non-daily resolution or alternate
-    # curve functions. Probably the best combination of legibility and
-    # performance is to make a function per use case, but a carefully used
-    # class pattern could be useful. The two goals are: (1) don't impact
-    # performance, and (2) don't impact legibility (clarity of process flow).
     intensity_opts = {
         'min_count': opts.get('intensity_min_count', 10),
         'iterations': opts.get('intensity_iterations', 100),
@@ -205,7 +191,7 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
     # patient data to the grid. There is no issue if they extend beyond the
     # patient data, the curves should just extrapolate to the grid limits.
     if start is not None or until is not None:
-        data = data[(grid[0] <= data.date) & (data.date <= grid[-1])]
+        data = data[(grid[0] <= data.datetime) & (data.datetime <= grid[-1])]
 
     # If `med_dates` is True then the Medication curves do the initial
     # interpolation using *only* dates in the patient record where there is at
@@ -215,26 +201,33 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
     # does not give information about the presence or absence of any given med.
     if med_dates:
         is_med = np.array([modes[c] == 'Medication' for c in data.concept_id])
-        all_dates = np.sort(np.copy(data.date[is_med], order='C'))
+        all_dates = data.datetime[is_med]
     else:
-        all_dates = np.sort(np.copy(data.date, order='C'))
+        all_dates = data.datetime
+    all_dates = np.sort(all_dates).astype('M8[D]')
 
-    groups, concepts, _ = split_by_concept_id(data)
+    # Split the dataset on concept id to process each concept separately
+    concepts, locs = np.unique(data.concept_id, return_index=True)
+    loc_ij = zip(locs, np.append(locs[1:], len(data)))
+    groups = tuple(data[i:j] for i, j in loc_ij)
+    assert sum(len(x) for x in groups) == len(data)
+
     curves = np.empty((len(concepts), len(grid)), dtype=float)
     for i, (g, c) in enumerate(zip(groups, concepts)):
+        dates = g.datetime.astype('M8[D]')
         # Fast-path computation of Condition and Measurement curves which can
         # be determined to be constant prior to calling the curve function
         match modes.get(c):
-            case 'Condition' if len(g.date) < fi_min_events:
-                x = np.float64(len(g.date) / len(grid))
+            case 'Condition' if len(dates) < fi_min_events:
+                x = np.float64(len(dates) / len(grid))
             case 'Condition':
-                x = event_intensity(grid, g.date, **intensity_opts)
-            case 'Measurement' if len(g.date) == 1:
+                x = event_intensity(grid, dates, **intensity_opts)
+            case 'Measurement' if len(dates) == 1:
                 x = g.value[0]
             case 'Measurement':
-                x = pchip_regression(grid, g.date, g.value, **pchip_opts)
+                x = pchip_regression(grid, dates, g.value, **pchip_opts)
             case 'Medication':
-                x = binary_signal(grid, g.date, all_dates, **binary_opts)
+                x = binary_signal(grid, dates, all_dates, **binary_opts)
             case _:
                 continue
         curves[i] = x
@@ -311,7 +304,7 @@ def legacy_curve_gen(data, start=None, until=None, window=365, validate=False,
                     curves=curves, grid=grid_range_args(grid))
 
 
-def calculate_age_stats(space, cohort):
+def calculate_age_stats(space: SampleSpace, cohort: Cohort):
     """
     A cohort is a set of PersonMeta records, each of which defines a birthdate.
     Since a SampleSpace calculates the min and max dates per person in an
@@ -323,9 +316,8 @@ def calculate_age_stats(space, cohort):
     Returns a 2-tuple of floats, `(mean, stdev)`, for Age over the dates
     spanned by the given cohort, measured in fractional years.
     """
-    D = {p.person_id: np.datetime64(p.birthdate) for p in cohort}
-    D = np.array([D[i] for i in space.ids])
-    D = space.dates - D[:, None]
+    D = np.array([cohort.birthdays[i] for i in space.person_id])
+    D = (space.datetimes - D[:, None]).astype('m8[D]')
 
     # Calculate in two passes. On sizeable datasets (which we expect) directly
     # instantiating the Age curves and passing them to np.mean / np.std is
@@ -344,42 +336,12 @@ def calculate_age_stats(space, cohort):
     return m, s
 
 
-def build_age_curve(index, cohort, age_mean=None, age_sdev=None, unit=365.25):
+def build_age_curve(index: SampleIndex, cohort: Cohort,
+                    age_mean=None, age_sdev=None, unit=365.25):
     """
-    Index is a DateSampleIndex or equivalent data structure which specifies the
-    (person_id, date) pairs which index a given dataset. Cohort is an iterable
-    of PersonMeta objects which provide demographic information about the
-    persons in the cohort, including birthdate. Alternately, cohort is a
-    dictionary mapping person_ids to np.datetime64 birthdates. age_mean and
-    age_sdev are the mean and standard deviation to use in scaling the age
-    curve.
-
-    Returns the age curve, an ndarray of len(index.data) and dtype float,
-    corresponding to the sample points in `index`. The curve is centered and
-    scaled to unit stdev.
-
-    Precomputing the person-birthdate mapping can save time when building age
-    curves for many index sets (cohort in example below has approx 2.5 million
-    persons, and index contains 600_000 sample points from approx 97 thousand
-    unique persons):
-
-    In [5]: %time age_map = {p.person_id: np.datetime64(p.birthdate) for p in cohort}
-    CPU times: user 3.52 s, sys: 52.8 ms, total: 3.57 s
-    Wall time: 3.59 s
-
-    In [6]: %time age_curve = build_age_curve(index, cohort, age_mean, age_sdev)
-    CPU times: user 6.33 s, sys: 71.8 ms, total: 6.4 s
-    Wall time: 6.43 s
-
-    In [7]: %time age_curve = build_age_curve(index, age_map, age_mean, age_sdev)
-    CPU times: user 2.74 s, sys: 19.9 ms, total: 2.76 s
-    Wall time: 2.77 s
     """
-    if not isinstance(cohort, dict):
-        D = {p.person_id: np.datetime64(p.birthdate) for p in cohort}
-    else:
-        D = cohort
-    D = np.array([date-D[person] for person, date in index.data], dtype=float)
+    D = np.array([date - cohort.birthdays[p] for person, date in index])
+    D = D.astype('m8[D]').astype(float)
     D /= unit
     # Don't do useless work: x-0 and x/1 are identity ops
     if age_mean is not None and age_mean != 0.0: D -= age_mean
@@ -387,20 +349,22 @@ def build_age_curve(index, cohort, age_mean=None, age_sdev=None, unit=365.25):
     return D
 
 
-def build_demographic_curves(index, demos, concepts):
+def build_demographic_curves(index: SampleIndex, cohort: Cohort, concepts):
     """One-hot encodes the demographics of a given index.
-
-    "index" is a DateSampleIndex or equivalent data structure specifying pairs of
-    (person_id, date/time) for some data set. "demos" is a mapping from
-    demographic concept ids (or channel labels) to person ids. "concepts" is
-    the universe of demographic concepts over which to operate, it is therefore
-    the labelling of the rows of the output ndarray. Any element of "concepts"
-    not also a key of "demos" (or a key to an empty list) will be identically
-    zero. The output ndarray is of shape "[len(concepts), len(index)]".
     """
-    dmap = {k: np.isin(index.data['person_id'], v) for k, v in demos.items()}
-    curves = np.zeros((len(concepts), len(index.data)))
+    masks = {k: np.isin(index.person_id, v)
+             for k, v in cohort.demographics.items()}
+    curves = np.zeros((len(concepts), len(index)))
     for i, c in enumerate(concepts):
-        if c in dmap:
+        if c in masks:
             curves[i, dmap[c]] = 1.0
-    return concepts, curves
+    return curves
+
+
+def eval_recency_curves(data, meta, targets):
+    """Evaluate "recency" curves.
+
+    The "tau" parameter is 30 for Conditions, 7 for Medications, Procedures,
+    and Labs, and Labs are also carried forward.
+    """
+    # TODO
