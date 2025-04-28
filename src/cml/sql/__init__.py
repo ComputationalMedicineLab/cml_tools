@@ -218,3 +218,7 @@ class SQLGenerator:
     def gen_select_demographics_meta(self):
         """Produce a SELECT to get demographics channel metadata"""
         return self.format(get_template('select_demo_meta.sql'))
+
+    def gen_select_visits(self):
+        """Produce a SELECT to get visit data from the workspace"""
+        return self.format(get_template('select_visits.sql'))

@@ -6,6 +6,7 @@ from functools import cached_property
 from multiprocessing.managers import SharedMemoryManager
 from operator import attrgetter
 
+import bottleneck as bn
 import numpy as np
 import numpy.lib.format as npf
 
@@ -266,3 +267,48 @@ class EHR(SOA):
                 records.append((person_id, concept, t.date, t.value))
         ehr = EHR.from_records(records, sort=True)
         return ehr, person, to_concepts
+
+
+# TODO: there is significant overlap between this and the SampleSpace concept.
+# Possibly there should be either just the one class or the SampleSpace should
+# be split into two: an EHR Index and a mapping from person ids to intervals.
+# Then a "Visits" table is the basis for a particular sample space. As it is,
+# this can be used directly *as* a samplespace:
+#
+#   >>> visits = Visits.from_npz('./inpatient_admissions.npz')
+#   >>> sample_index = sample_uniform(visits, 600_000)
+#
+# This works just exactly as expected. So when sampling within inpatient
+# admissions is desired, a samplespace instance is used to find the EHR for a
+# given person (because it contains the EHR indices) and the Visits instance is
+# used to generate the sample index. This feels backwards because of the naming
+# but works fine. Need to think more about how to organize these ideas.
+class Visits(SOA):
+    """
+    Provides a table of (person_id, start_datetime, end_datetime) tuples; one
+    per visit. Not gauranteed (or even likely) to be unique with respect to
+    person_id.
+    """
+    fields = ('person_id', 'datetimes')
+    dtypes = wrapdtypes('i8', 'M8[s]')
+    __slots__ = fields
+
+    def __init__(self, person_id, datetimes):
+        self.person_id = person_id
+        self.datetimes = datetimes
+
+    @classmethod
+    def from_arrow(cls, table):
+        # custom subclass impl. to merge the datetime cols into an ndarray
+        person_id = table.column('person_id').to_numpy()
+        datetimes = np.empty((len(table), 2), dtype=cls.dtypes[1])
+        datetimes[:, 0] = table.column('start_datetime').to_numpy()
+        datetimes[:, 1] = table.column('end_datetime').to_numpy()
+        assert not bn.anynan(person_id)
+        assert not bn.anynan(datetimes)
+        return cls(person_id, datetimes)
+
+    @property
+    def ntimepoints(self):
+        """Patient-time points spanned by the Visit datetime ranges"""
+        return np.sum(self.datetimes[:, 1] - self.datetimes[:, 0])

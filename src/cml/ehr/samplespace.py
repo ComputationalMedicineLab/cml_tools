@@ -78,8 +78,7 @@ class SampleSpace(SOA):
 
     @classmethod
     def from_ehr(cls, ehr: EHR):
-        """Produce a SampleSpace from a recarray of EHR data"""
-        # np.unique will cause a brief doubling of memory usage
+        """Produce a SampleSpace from an EHR instance"""
         ids, indices = np.unique(ehr.person_id, return_index=True)
         indices = indices.tolist()
         indices.append(len(ehr))
