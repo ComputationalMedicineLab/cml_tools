@@ -1,4 +1,8 @@
 #!/bin/bash
+# In order to install micromamba, run:
+#       "${SHELL}" <(curl -L micro.mamba.pm/install.sh)
+# from a shell and then follow the instructions for rc file initialization.
+#
 # If running this script ('./build_env.sh') fails because micromamba cannot be
 # found but micromamba is available from your calling shell, source this script
 # instead ('source build_env.sh'). In either case, run or source from this dir.
