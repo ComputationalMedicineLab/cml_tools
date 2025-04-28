@@ -2,7 +2,7 @@ SELECT DISTINCT
     P.person_id,
     S.concept_id,
     M.measurement_datetime AS datetime,
-    M.value_as_number
+    M.value_as_number AS value
 FROM {source}.{omop}.person P
 JOIN {source}.{omop}.measurement M ON (M.person_id = P.person_id)
 JOIN {workspace}.{schema}.measurement_stats S ON (S.concept_id = M.measurement_concept_id)

@@ -68,3 +68,45 @@ def select_python(select_statement: str,
         with open(outfile, 'wb') as file:
             pickle.dump(result, file, protocol=pickle.HIGHEST_PROTOCOL)
     return header, result
+
+
+def split_statements(statements: str|list[str]):
+    """
+    The databricks cursor.execute function does not support multiple SQL
+    statements per input. However, to keep the source scripts readable it is
+    desirable to allow multiple statements per input file. This function strips
+    out all comments, extra space, and splits its inputs by ";" chars.
+
+    Argument `statements` may be a single string or an iterable of strings;
+    each string may contain 1 or more SQl statements.
+    """
+    if isinstance(statements, str):
+        statements = [statements]
+    scripts = []
+    for stmt in statements:
+        buff = []
+        for line in stmt.strip().split('\n'):
+            if '--' in line:
+                # If the line ends in a comment this removes it; if the whole
+                # line is a comment this reduces it to the empty string ''
+                line = line[:line.index('--')].rstrip()
+            if line:
+                buff.append(line)
+                if line.rstrip().endswith(';'):
+                    scripts.append('\n'.join(buff))
+                    buff = []
+    return tuple(scripts)
+
+
+def run_scripts(statement: str|list[str],
+                conn_opts: dict[str, str]):
+    """Execute the non-SELECT statement(s) and commit"""
+    _validate_connection_opts(conn_opts)
+    scripts = split_statements(statement)
+    # Transactions are not supported by databricks, so we don't need to bother
+    # with committing / rollbacking etc - we can just execute each statement in
+    # sequence and it should work correctly. `cursor.execute` returns None.
+    with dbsql.connect(**conn_opts) as connection:
+        with connection.cursor() as cursor:
+            for script in scripts:
+                cursor.execute(script)

@@ -53,7 +53,7 @@ MeasurementParams = DataTableParams(
 
 MedicationParams = DataTableParams(
     name='medications',
-    metatable='medication',
+    metatable='medications',
     fill_expr='0.0',
     mode_expr="'Medication'",
     where='mentions >= 1000',
@@ -62,7 +62,7 @@ MedicationParams = DataTableParams(
 
 ProcedureParams = DataTableParams(
     name='procedures',
-    metatable='procedure',
+    metatable='procedures',
     fill_expr='0.0',
     mode_expr="'Procedure'",
     where='mentions >= 100',
