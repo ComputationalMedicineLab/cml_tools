@@ -359,12 +359,3 @@ def build_demographic_curves(index: SampleIndex, cohort: Cohort, concepts):
         if c in masks:
             curves[i, dmap[c]] = 1.0
     return curves
-
-
-def eval_recency_curves(data, meta, targets):
-    """Evaluate "recency" curves.
-
-    The "tau" parameter is 30 for Conditions, 7 for Medications, Procedures,
-    and Labs, and Labs are also carried forward.
-    """
-    # TODO
