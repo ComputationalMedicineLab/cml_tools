@@ -58,6 +58,10 @@ class SampleSpace(SOA):
         self._index_map = {p: i for i, p in enumerate(self.person_id)}
 
     @property
+    def index_map(self):
+        return self._index_map
+
+    @property
     def astuple(self):
         return (self.person_id, self.indices, self.datetimes)
 

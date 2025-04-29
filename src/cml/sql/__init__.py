@@ -221,4 +221,10 @@ class SQLGenerator:
 
     def gen_select_visits(self):
         """Produce a SELECT to get visit data from the workspace"""
-        return self.format(get_template('select_visits.sql'))
+        select = get_template('select_visits.sql')
+        subsel = get_template('select_visits_cte.sql')
+        cte = indent(indent(self.union(
+            self.format(subsel, name=spec.name)
+            for spec in self.data_spec
+        )))
+        return self.format(select, cte=cte)
