@@ -8,7 +8,7 @@ def get_template(name, strip_comments=True):
     """Load a SQL template from the cml.sql resource directory"""
     base = ipr.files('cml.sql').joinpath(name).read_text().strip()
     if strip_comments:
-        base = (x for x in base.split('\n') if not x.startswith('--'))
+        base = (x for x in base.split('\n') if not x.lstrip().startswith('--'))
         base = '\n'.join(base)
     return base
 
