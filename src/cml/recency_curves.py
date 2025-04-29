@@ -61,8 +61,8 @@ def eval_recency_at_point(target, data, tau_map):
     lab_concepts = np.copy(recents.concept_id[lab_mask])
     lab_values = np.copy(recents.value[lab_mask])
 
-    rcp = (target[0], target[1], rec_concepts, rec_values)
-    lcp = (target[0], target[1], lab_concepts, lab_values)
+    rcp = (target[0], np.array([target[1]]), rec_concepts, rec_values[:, None])
+    lcp = (target[0], np.array([target[1]]), lab_concepts, lab_values[:, None])
     return (rcp, lcp)
 
 

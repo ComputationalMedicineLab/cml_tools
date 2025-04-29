@@ -340,7 +340,7 @@ def build_age_curve(index: SampleIndex, cohort: Cohort,
                     age_mean=None, age_sdev=None, unit=365.25):
     """
     """
-    D = np.array([date - cohort.birthdays[p] for person, date in index])
+    D = np.array([date - cohort.birthdays[person] for person, date in index])
     D = D.astype('m8[D]').astype(float)
     D /= unit
     # Don't do useless work: x-0 and x/1 are identity ops
@@ -357,5 +357,5 @@ def build_demographic_curves(index: SampleIndex, cohort: Cohort, concepts):
     curves = np.zeros((len(concepts), len(index)))
     for i, c in enumerate(concepts):
         if c in masks:
-            curves[i, dmap[c]] = 1.0
+            curves[i, masks[c]] = 1.0
     return curves
