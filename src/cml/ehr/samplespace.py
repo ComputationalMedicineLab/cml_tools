@@ -1,4 +1,5 @@
 """Tools for sampling patient data spaces"""
+import collections
 import contextlib
 import functools
 import pickle
@@ -30,6 +31,15 @@ class SampleIndex(SOA):
         # Cache these two properties on the instance; why calculate repeatedly?
         self._npersons = len(ids)
         self._ndates = len(np.unique(self.datetime))
+
+    # Maybe TODO: build a generalized "datetime unit" abstraction for use here
+    # and in ehr.dtypes (and many ehr.curves)?
+    def set_dt_unit(self, unit):
+        """Changes the datetime unit to `unit` on this instance"""
+        new_dtype = np.dtype(f'M8[{unit}]')
+        if new_dtype != self.datetime.dtype:
+            self.datetime = self.datetime.astype(new_dtype)
+        return self
 
     @property
     def mapping(self):
@@ -124,6 +134,63 @@ class SampleSpace(SOA):
         return tuple(iter_batches(X, n=n))
 
 
+def dedupe_index(index: SampleIndex):
+    """Drop duplicate sample points from a SampleIndex. Returns new object."""
+    # Round trip the values through a recarray so that np.unique will work
+    ra = np.unique(np.rec.fromarrays(index.astuple))
+    return SampleIndex(ra.field(0), ra.field(1))
+
+
+# Simple wrapper for the output of fit_index_into_space, see below
+FitResults = collections.namedtuple('FitResults',
+    'index space n_missing_persons n_missing_datapoints n_out_of_range'
+)
+def fit_index_into_space(index, space, match_dt_units=True):
+    """
+    Fits a SampleIndex into a given SampleSpace at index resolution. Persons
+    who are not present in the space are dropped from the index, sample points
+    which are no longer valid are clipped to the SampleSpace date ranges when
+    possible else dropped. The return value is a namedtuple containing a new
+    index, the corresponding subset of the input space (perhaps adjusted to the
+    index's time resolution), and the numbers of persons dropped, sample points
+    dropped, and sample points adjusted to be within target time boundaries.
+    """
+    # The index may contain persons not in the sample space: remove them
+    p_idx = np.array([space.index_map.get(p, np.nan) for p in index.person_id])
+    nan_mask = np.isnan(p_idx)
+    n_missing_persons = len(np.unique(index.person_id[nan_mask]))
+    n_missing_datapoints = sum(nan_mask)
+
+    subindex = index[~nan_mask]
+    subspace = space[p_idx[~nan_mask].astype(int)]
+
+    # The index may contain sample points outside the space. But first, we may
+    # need to drop the resolution of the samplespace to match the resolution of
+    # the index (e.g. if the index is specified at daily resolution and the
+    # space at seconds or minutes). The assumption is that the curves are built
+    # at the resolution of the sampling index. But the samplespace may lose
+    # some persons at a lower resolution (if, e.g., a person has data only
+    # within a single day, we may be able to build curves and sample at second
+    # resolution but not at daily). So we have to check if we're dropping more
+    # people.
+    if match_dt_units:
+        subspace.datetimes = subspace.datetimes.astype(subindex.datetime.dtype)
+        keep_mask = subspace.datetimes[:, 1] > subspace.datetimes[:, 0]
+        n_missing_persons += len(np.unique(subspace.person_id[~keep_mask]))
+        n_missing_datapoints += sum(~keep_mask)
+        subindex = subindex[keep_mask]
+        subspace = subspace[keep_mask]
+
+    # Now truncate the sample index dates to fit within the sample space
+    lo_mask = subindex.datetime < subspace.datetimes[:, 0]
+    hi_mask = subindex.datetime > subspace.datetimes[:, 1] - 1
+    subindex.datetime[lo_mask] = subspace.datetimes[lo_mask, 0]
+    subindex.datetime[hi_mask] = subspace.datetimes[hi_mask, 1] - 1
+    n_out_of_range = sum(lo_mask) + sum(hi_mask)
+    return FitResults(dedupe_index(subindex), subspace, n_missing_persons,
+                      n_missing_datapoints, n_out_of_range)
+
+
 def overlap(a_start, a_stop, b_start, b_stop):
     """Predicate: do the intervals A and B have any overlap?"""
     # This function is actually documentation. It usually needs to be inlined
@@ -133,7 +200,7 @@ def overlap(a_start, a_stop, b_start, b_stop):
 
 
 @functools.cache
-def restrict_by_dates(space: SampleSpace, start, stop):
+def restrict_to_interval(space: SampleSpace, start, stop):
     """
     Clamps the datetimes within a SampleSpace to the range [start, stop),
     following the semantics of the start and stop arguments to builtins.range.

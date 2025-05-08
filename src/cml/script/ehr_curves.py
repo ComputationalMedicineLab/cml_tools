@@ -290,10 +290,10 @@ def cli():
     # The output files may be *very* large and require a *lot* of time to
     # calculate; so, let us be sure that we want to clobber them if any exist.
     if not args.clobber:
-        if args.curvesfile.exists():
+        if args.curvesfile and args.curvesfile.exists():
             logging.info(f'Output file {args.curvesfile} exists, aborting')
             exit()
-        for _, _, out in args.samplespec:
+        for out, _, _ in args.samplespec:
             if out.exists():
                 logging.info(f'Output samples file {out} exists, aborting')
 
@@ -368,8 +368,8 @@ def cli():
         base_labels, base_stats = reduce(merge, base_stats).asarrays
         lg10_labels, lg10_stats = reduce(merge, lg10_stats).asarrays
         np.savez(args.statsfile,
-                base_labels=base_labels, base_stats=base_stats,
-                lg10_labels=lg10_labels, lg10_stats=lg10_stats)
+                 base_labels=base_labels, base_stats=base_stats,
+                 lg10_labels=lg10_labels, lg10_stats=lg10_stats)
 
     # Remember the sampled curve points are stripped of the CurvePointSet class
     # and pickled *immediately* when they are created. This is better for
