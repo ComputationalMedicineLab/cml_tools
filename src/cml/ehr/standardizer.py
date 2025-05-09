@@ -45,22 +45,37 @@ class Log10Scaler:
         return K
 
     def apply(self, X, labels):
-        """Operates *in-place*!"""
+        """
+        Optionally log transforms the data. Then subtracts the shift and
+        divides by the scale: `y = (x - shift) / scale`.
+
+        Equivalent to a matricized, inplace version of:
+        >>> if log:
+        ...     x = np.log10(x + eps)
+        >>> x = (x - shift) / scale
+        """
         # What if not every label has an entry in self.labels? Do nothing by
         # default? Make ones/zeros and overwrite with scale/shift?
         K = self.label_index(labels)
         if np.any(mask := self.log10[K]):
             np.add(X, self.eps, out=X, where=mask)
             np.log10(X, out=X, where=mask)
-        np.multiply(X, self.scale[K], out=X)
-        np.add(X, self.shift[K], out=X)
+        np.subtract(X, self.shift[K], out=X)
+        np.divide(X, self.scale[K], out=X)
         return X
     __call__ = apply
 
     def apply_inverse(self, X, labels):
+        """
+        Undoes the effects of apply. Equivalent to a matricized, inplace
+        version of:
+        >>> y = (scale * x) + shift
+        >>> if log:
+        ...     x = np.power(10, x) - eps
+        """
         K = self.label_index(labels)
-        np.subtract(X, self.shift[K], out=X)
-        np.divide(X, self.scale[K], out=X)
+        np.multiply(X, self.scale[K], out=X)
+        np.add(X, self.shift[K], out=X)
         if np.any(mask := self.log10[K]):
             np.power(10, X, out=X, where=mask)
             np.subtract(X, self.eps, out=X, where=mask)
