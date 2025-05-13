@@ -20,8 +20,7 @@ DEFAULT_MODE_PARAMS = {
                    'noshift': True,
                    'postfill': True,
                    'agg_mode': True},
-    'Measurement': {'kind': 'gelman_with_fallbacks',
-                    'eps': 1e-6},
+    'Measurement': {'kind': 'gelman_with_fallbacks'},
 }
 
 
@@ -81,17 +80,32 @@ class Log10Scaler:
             np.subtract(X, self.eps, out=X, where=mask)
         return X
 
-    def format_impact(self, label, delta, anchor=1, spec='+.2f'):
+    def format_impact(self, label, delta, anchor=1.0, spec='+.2f'):
+        """
+        Provides the meaning of `delta` in the original space of the channel
+        specified by `label`, with format `spec` and reference to `anchor`.
+
+        For most transforms, an additive change in the amount `delta`
+        corresponds to a scaled but still additive amount in the original
+        space. In this case, `delta` in the transformed space is simply scaled
+        to the original space and given an additive label. If the transform
+        includes a logarithm operation, then an additive `delta` in the
+        original space corresponds to a multiplicative change in the original
+        space. In this case, `delta` is appropriately scaled and given the
+        appropriate multiplicative label.
+        """
         x = self.apply_inverse(np.array([anchor, anchor+delta]), [label])
-        impact = x[1] - x[0]
-        prefix = ''
         if self.log10[self.label_index(label)]:
             spec = spec.lstrip('+')
-            if impact > 1.0:
+            if x[0] < x[1]:
                 prefix = 'x'
+                impact = x[1] / x[0]
             else:
                 prefix = '/'
-                impact = 1.0 / impact
+                impact = x[0] / x[1]
+        else:
+            prefix = ''
+            impact = x[1] - x[0]
         return f'{prefix}{impact:{spec}}'
 
 

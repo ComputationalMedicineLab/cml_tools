@@ -338,8 +338,7 @@ def calculate_age_stats(space: SampleSpace, cohort: Cohort):
 
 def build_age_curve(index: SampleIndex, cohort: Cohort,
                     age_mean=None, age_sdev=None, unit=365.25):
-    """
-    """
+    """Produces Age as fractional years of sample time since."""
     D = np.array([date - cohort.birthdays[person] for person, date in index])
     D = D.astype('m8[D]').astype(float)
     D /= unit

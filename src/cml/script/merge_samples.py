@@ -15,9 +15,10 @@ import numpy as np
 from cml import init_logging, get_nproc, unpickle_stream
 from cml.ehr.curves import (build_age_curve,
                             build_demographic_curves,
-                            calculate_age_stats)
-from cml.ehr.dtypes import ConceptMeta, PersonMeta
-from cml.ehr.samplespace import DateSampleIndex, SampleSpace
+                            calculate_age_stats,
+                            CurvePointSet)
+from cml.ehr.dtypes import Cohort, ConceptMeta, PersonMeta
+from cml.ehr.samplespace import SampleIndex, SampleSpace
 from cml.ehr.standardizer import make_log10scaler, Log10Scaler
 from cml.label_expand import expand
 from cml.stats.incremental import IncrStats
@@ -27,10 +28,10 @@ def build_output(index, samples, labels, fills, scaler=None, out=None):
     """Expands and fills the samples, maybe scales them as well"""
     check_index, check_labels, X = expand(samples, labels, fills, out=out)
 
-    if not np.all(check_index[0].astype(np.int64) == index.data['person_id']):
+    if not np.all(check_index[0].astype(np.int64) == index.person_id):
         raise RuntimeError('Expansion index person_ids fail to match')
 
-    if not np.all(check_index[1].astype('<M8[D]') == index.data['date']):
+    if not np.all(check_index[1].astype('M8[D]') == index.datetime):
         raise RuntimeError('Expansion index dates fail to match')
 
     if not np.all(check_labels == labels):
@@ -112,10 +113,10 @@ def cli():
     f('-S', '--samples', action='append', type=sampleset,
       help=dedent("""\
         A string which specifies three paths: "INDEX SAMPLES DEST". INDEX is a
-        path to a DateSampleIndex compatible .npy or .pkl; SAMPLES is a path
-        to a pickled sequence of CurvePointSet compatible tuples; DEST is a
-        writable output directory where the constructed X, index, and features
-        will be written as "X.npy", "index.npy", and "features.npy".
+        path to a SampleIndex compatible .npz; SAMPLES is a path to a pickled
+        sequence of CurvePointSet compatible tuples; DEST is a writable output
+        directory where the constructed X, index, and features will be written
+        as "X.npy", "index.npy", and "features.npy".
       """))
 
     # TODO: fast-track whitening. Don't waste any time goofing around with
@@ -161,12 +162,12 @@ def cli():
 
     # Too fast to bother caching
     logging.info('Loading channel metadata')
-    meta = ConceptMeta.from_pickle_seq(args.meta, header=True)
+    meta = ConceptMeta.from_pickle_seq(args.meta)
     fills = {m.concept_id: m.fill_value for m in meta}
     labels = np.sort(np.array([m.concept_id for m in meta]))
 
     logging.info('Loading cohort metadata')
-    cohort = PersonMeta.from_pickle_seq(args.cohort, header=True)
+    cohort = Cohort.from_pickle(args.cohort)
 
     if args.no_cache or not args.cache.exists():
         cache = {}
@@ -190,7 +191,7 @@ def cli():
     else:
         # If we are scaling, then assemble the Log10Scaler
         def f():
-            return SampleSpace.from_pickle(args.space).ntimepoints.astype(int)
+            return SampleSpace.from_npz(args.space).ntimepoints.astype(int)
         n_obs = check_cache(cache, 'n_obs', f, cache_log)
 
         def f():
@@ -206,21 +207,13 @@ def cli():
         scaler = Log10Scaler(*check_cache(cache, 'scaler', f, cache_log))
 
     def f():
-        return PersonMeta.cohort_demographic_map(cohort)
-    demo_map = check_cache(cache, 'demo_map', f, cache_log)
-
-    def f():
-        demo_meta = ConceptMeta.from_pickle_seq(args.demo, header=True)
+        demo_meta = ConceptMeta.from_pickle_seq(args.demo)
         return np.unique([m.concept_id for m in demo_meta])
     demo_concepts = check_cache(cache, 'demo_concepts', f, cache_log)
 
     # These two in particular are pricy
     def f():
-        return {p.person_id: np.datetime64(p.birthdate) for p in cohort}
-    age_map = check_cache(cache, 'age_map', f, cache_log)
-
-    def f():
-        space = SampleSpace.from_pickle(args.space)
+        space = SampleSpace.from_npz(args.space)
         return calculate_age_stats(space, cohort)
     age_mean, age_sdev = check_cache(cache, 'age_stats', f, cache_log)
 
@@ -246,20 +239,17 @@ def cli():
     buffer = None
     for index_path, sample_path, output in args.samples:
         t_start = t0 = perf_counter()
-        samples = sorted(unpickle_stream(sample_path), key=item0)
+        samples = CurvePointSet.from_pickle_stream(sample_path)
+        samples = sorted((s.astuple for s in samples), key=item0)
         dt = perf_counter() - t0
         logging.info('Loaded Samples %s in %.2f', sample_path.name, dt)
 
-        # If the index is npy well and good, else try pickle
         t0 = perf_counter()
-        if index_path.suffix == '.npy':
-            index = DateSampleIndex(np.load(index_path), sort=True)
-        else:
-            index = DateSampleIndex.from_pickle(index_path, sort=True)
+        index = SampleIndex.from_npz(index_path)
         dt = perf_counter() - t0
         logging.info('Loaded Index %s in %.2f', index_path.name, dt)
 
-        shape = (len(features), len(index.data))
+        shape = (len(features), len(index))
         if buffer is None or buffer.shape != shape:
             logging.info(f'Initializing new memory buffer: {shape=}')
             buffer = np.empty(shape)
@@ -276,12 +266,10 @@ def cli():
         del X
 
         t0 = perf_counter()
-        ac = build_age_curve(index, age_map, age_mean, age_sdev)
-        if not (ac.shape == index.data.shape):
+        ac = build_age_curve(index, cohort, age_mean, age_sdev)
+        if len(ac) != len(index):
             raise RuntimeError('Age curve does not match index')
-        di, dc = build_demographic_curves(index, demo_map, demo_concepts)
-        if not np.all(di == demo_concepts):
-            raise RuntimeError('Demo curve index failed to match concepts')
+        dc = build_demographic_curves(index, cohort, demo_concepts)
         if not (dc.shape == (len(demo_concepts), len(buffer[0]))):
             raise RuntimeError(f'{dc.shape=} failed to match')
         logging.info('Calculated demo curves in %.2f', perf_counter()-t0)
@@ -293,7 +281,8 @@ def cli():
 
         t0 = perf_counter()
         np.save(output/'X.npy', buffer)
-        np.save(output/'index.npy', index.data)
+        # This is redundant? It should just be a copy of whats at index_path
+        #index.to_npz('./index.npz', compress=True)
         np.save(output/'features.npy', features)
         logging.info('Persisted results in %.2f', perf_counter() - t0)
         logging.info('COMPLETED expansion for %s in %.4f', sample_path.name,
