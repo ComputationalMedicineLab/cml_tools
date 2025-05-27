@@ -18,6 +18,7 @@ class SampleIndex(SOA):
 
     def __init__(self, person_id, datetime):
         # Make sure the inputs are always lexically sorted (person, datetime)
+        # The np function lexsort sorts from the last argument to the first.
         order = np.lexsort((datetime, person_id))
         self.person_id = np.copy(person_id[order])
         self.datetime = np.copy(datetime[order])

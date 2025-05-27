@@ -200,7 +200,10 @@ def build_ehr_curves(data, meta, *, start=None, until=None, window=365,
     # being tracked during that visit (or equivalent), and therefore that date
     # does not give information about the presence or absence of any given med.
     if med_dates:
-        is_med = np.array([modes[c] == 'Medication' for c in data.concept_id])
+        is_med = [modes[c] == 'Medication' for c in data.concept_id]
+        # Explicitly setting the type defends against empty inputs:
+        # >>> np.array([]).dtype == np.float64  # Result is np.True_
+        is_med = np.array(is_med, dtype=bool)
         all_dates = data.datetime[is_med]
     else:
         all_dates = data.datetime

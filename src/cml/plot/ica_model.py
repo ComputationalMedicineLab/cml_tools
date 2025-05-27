@@ -11,7 +11,8 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 
 def plot_ic_scaled(component, source, label_func, color_func, title='',
-                   cs_cutoff=0.95, min_elem=10, max_elem=60, bar_label=True):
+                   cs_cutoff=0.95, min_elem=10, max_elem=60, bar_label=True,
+                   normed_xaxis=True):
     """
     Barplot the scaled significant elements of an independent component. The
     elements of the component are sorted by the magnitude of their projections
@@ -69,7 +70,10 @@ def plot_ic_scaled(component, source, label_func, color_func, title='',
     ordering = ordering[:n_plot][::-1]
 
     # Get the basic values for the barplot - use normalized len for bar len
-    xs = np.sign(component[ordering]) * np.sqrt(V[ordering] / np.sum(V))
+    if normed_xaxis:
+        xs = np.sign(component[ordering]) * np.sqrt(V[ordering] / np.sum(V))
+    else:
+        xs = component[ordering]
     ys = np.arange(n_plot)
 
     # User supplied functions give us labels & colors for plotting
