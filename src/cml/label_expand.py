@@ -43,8 +43,10 @@ def expand(data, labels=None, fills=None, out=None):
         offset = len(obs)
         index[0][base:base+offset] = id_
         index[1][base:base+offset] = obs
-
-        _, idx, _ = np.intersect1d(labels, feats, assume_unique=True, return_indices=True)
-        X[idx, base:base+offset] = values
+        # If there are no features then there are no values - the observations
+        # are empty (i.e, rows of entirely fill values)
+        if np.any(feats):
+            _, idx, _ = np.intersect1d(labels, feats, assume_unique=True, return_indices=True)
+            X[idx, base:base+offset] = values
         base += offset
     return index, labels, X

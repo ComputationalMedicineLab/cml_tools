@@ -6,6 +6,8 @@ def most_recent(target, data, assume_sorted=True,
                 label_field='concept_id', target_field='datetime'):
     # First prune the dataset of dates overshooting the target date.
     data = data[data[target_field] <= target]
+    if not len(data) > 0:
+        return []
     # Sorting may be pricy; but the data should be sorted by the time it gets
     # here. The below works assuming sortedness: assume data is lexically
     # sorted by label and then data. Then if locs[i] and locs[i+1] give the
@@ -40,29 +42,30 @@ def eval_recency_at_point(target, data, tau_map):
     # Target is a (person_id, datetime) tuple
     # Data is the subset of the EHR for the person_id
     # Modes is a mapping from source concept ids to "mode" strings
-    assert np.all(data.person_id == target[0])
-    recents = most_recent(target[1], data)
+    pid, dt = target
+    assert np.all(data.person_id == pid)
+    recents = most_recent(dt, data)
 
     # The sample time is prior to any data (I.e. the visit must extend to
     # before any data... an unusual scenario. Maybe this needs to prohibited?
     # But if we define the allowable samples as any time in an inpatient
     # admission, maybe we need to allow samples prior to there being any actual
     # data).
-#    if not recents:
-#        rcp = (target[0], target[1], [], [])
-#        lcp = (target[0], target[1], [], [])
-#        return (rcp, lcp)
+    if not recents:
+        rcp = (pid, np.array([dt]), np.array([]), np.array([])[: None])
+        lcp = (pid, np.array([dt]), np.array([]), np.array([])[: None])
+        return (rcp, lcp)
 
     rec_concepts = np.copy(recents.concept_id)
-    rec_values = recency(target[1], recents.datetime,
-                         np.array([tau_map[c] for c in rec_concepts]))
+    taus = np.array([tau_map[c] for c in rec_concepts])
+    rec_values = recency(dt, recents.datetime, taus)
 
     lab_mask = np.isfinite(recents.value)
     lab_concepts = np.copy(recents.concept_id[lab_mask])
     lab_values = np.copy(recents.value[lab_mask])
 
-    rcp = (target[0], np.array([target[1]]), rec_concepts, rec_values[:, None])
-    lcp = (target[0], np.array([target[1]]), lab_concepts, lab_values[:, None])
+    rcp = (pid, np.array([dt]), rec_concepts, rec_values[:, None])
+    lcp = (pid, np.array([dt]), lab_concepts, lab_values[:, None])
     return (rcp, lcp)
 
 
