@@ -65,7 +65,7 @@ ProcedureParams = DataTableParams(
     metatable='procedures',
     fill_expr='0.0',
     mode_expr="'Procedure'",
-    where='mentions >= 100',
+    where='mentions >= 500',
     value=False,
 )
 

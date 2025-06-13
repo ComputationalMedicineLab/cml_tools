@@ -9,5 +9,6 @@ WHERE (
     P.birth_datetime >= '{birthdate}'
     AND PR.procedure_datetime >= '{startdate}'
     AND C.domain_id = 'Procedure'
-    AND C.vocabulary_id = 'CPT4'
+    -- VUMC OMOP sources use a blend of CPT4, SNOMED, and ICD Proc codes
+    -- AND C.vocabulary_id = 'CPT4'
 )
