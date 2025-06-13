@@ -9,6 +9,7 @@ seaborn
 jupyter
 ipython
 scikit-learn
+xgboost
 line_profiler
 
 # Database tools (see ./build_env.sh for databricks)
@@ -27,5 +28,7 @@ intel-openmp
 bottleneck
 # ISA-L bindings (Intelligent Storage Acceleration Library - i.e., for gzip)
 isal
+# This one is totally optional: progress bars (for use in scripts / notebooks)
+tqdm
 
 # vim: ft=sh
