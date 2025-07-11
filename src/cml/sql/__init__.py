@@ -34,32 +34,33 @@ class DataTableParams:
 
 # The most common parameters we use for four major data types:
 ConditionParams = DataTableParams(
-    name='conditions',
-    metatable='conditions',
+    name='conditions_daily',
+    metatable='conditions_daily',
     fill_expr='0.00013689253935660506',
     mode_expr="'Condition'",
-    where='mentions >= 1000',
+    where='mentions_daily >= 1000',
     value=False,
 )
 
 MeasurementParams = DataTableParams(
-    name='measurements',
+    name='measurements_daily',
     metatable='measurement_stats',
     fill_expr='p50',
     mode_expr="'Measurement'",
-    where='mentions >= 1000 AND persons >= 100',
+    where='mentions_daily >= 1000 AND persons >= 100',
     value=True,
 )
 
 MedicationParams = DataTableParams(
-    name='medications',
-    metatable='medications',
+    name='medications_daily',
+    metatable='medications_daily',
     fill_expr='0.0',
     mode_expr="'Medication'",
-    where='mentions >= 1000',
+    where='mentions_daily >= 1000',
     value=False,
 )
 
+# Procedures is (so far) primarily only used with the continuous-time projects
 ProcedureParams = DataTableParams(
     name='procedures',
     metatable='procedures',

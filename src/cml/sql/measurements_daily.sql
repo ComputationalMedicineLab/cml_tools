@@ -1,3 +1,6 @@
+-- Daily-resolution (instead of continuous) may require extra processing; such
+-- as using last_value and a `%_date` rather than a `%_datetime` field. Hence
+-- there is a daily and a continuous version of each major data template.
 SELECT DISTINCT
     P.person_id,
     S.concept_id,
@@ -11,8 +14,8 @@ FROM {source}.{omop}.person P
 JOIN {source}.{omop}.measurement M ON (M.person_id = P.person_id)
 JOIN {workspace}.{schema}.measurement_stats S ON (S.concept_id = M.measurement_concept_id)
 WHERE (
-    P.birth_datetime >= '{birth_datetime}'
-    AND M.measurement_datetime >= '{start_date}'
+    P.birth_datetime >= '{birthdate}'
+    AND M.measurement_datetime >= '{startdate}'
     AND M.value_as_number IS NOT NULL
     -- Outlier / error filtration
     AND (S.p01 <= 0 OR M.value_as_number > 0)
