@@ -206,11 +206,11 @@ def restrict_to_interval(space: SampleSpace, start, stop):
     Clamps the datetimes within a SampleSpace to the range [start, stop),
     following the semantics of the start and stop arguments to builtins.range.
     Persons in the original SampleSpace without any datetimes in that range are
-    filterd out. Returns a new SampleSpace.
+    filtered out. Returns a new SampleSpace.
     """
     start = np.datetime64(start)
     stop = np.datetime64(stop)
-    mask = (space.datetimes[:, 0] <= stop) & (start <= space.datetimes[:, 1])
+    mask = (space.datetimes[:, 0] < stop) & (start < space.datetimes[:, 1])
     datetimes = np.copy(space.datetimes[mask])
     datetimes[:, 0] = np.maximum(datetimes[:, 0], start)
     datetimes[:, 1] = np.minimum(datetimes[:, 1], stop)

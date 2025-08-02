@@ -14,7 +14,7 @@ from time import perf_counter
 
 import numpy as np
 
-from cml import init_logging, get_nproc
+from cml import init_logging, iter_batches, get_nproc
 from cml.ehr.curves import build_ehr_curves, compress_curves, select_cross_section
 from cml.ehr.dtypes import Cohort, ConceptMeta, EHR
 from cml.ehr.samplespace import SampleIndex, SampleSpace, sample_uniform
@@ -81,8 +81,8 @@ def samplespec(spec):
     return out, inp, num
 
 
-def run_curves(data, meta, stats=None, window=365):
-    results = build_ehr_curves(data, meta, window=window)
+def run_curves(data, meta, stats=None, start=None, until=None, window=365):
+    results = build_ehr_curves(data, meta, start=start, until=until, window=window)
     # The base stats should *never* be NaN
     base_stats = collect(results.curves, results.concepts,
                          nansafe=False, nansqueeze=False)
@@ -126,7 +126,7 @@ def worker(proc_num, input_batch, mem, lock, queue, meta, shapes, specs, args):
     perf_counter()
 
     data = EHR.wrap_shared_memory(shapes, mem)
-    for total, (person_id, i, j) in enumerate(input_batch, start=1):
+    for total, (person_id, (i, j), (dmin, dmax)) in enumerate(input_batch, start=1):
         # Select the patient EHR and verify its all for one patient. If
         # this assert fails then check that the source data is sorted.
         group = data[i:j]
@@ -142,7 +142,7 @@ def worker(proc_num, input_batch, mem, lock, queue, meta, shapes, specs, args):
         if _write_stats:
             curveset, stats = run_curves(group, meta, stats=stats)
         else:
-            curveset = build_ehr_curves(group, meta)
+            curveset = build_ehr_curves(group, meta, start=dmin, until=dmax)
 
         for i, (sample_set, _) in enumerate(specs):
             if (dates := sample_set.get(person_id)) is not None:
@@ -220,6 +220,9 @@ def cli():
 
     f('-s', '--statsfile', type=Path,
       help='Output .npz file for stats. If omitted, stats are not collected.')
+
+    f('--samplespace', type=Path,
+      help='Samplespace to override the start/stop dates of the default space')
 
     f('-S', '--samplespec', action='append', type=samplespec,
       help=dedent("""\
@@ -303,10 +306,14 @@ def cli():
     logging.info('Loading main EHR data from %s', args.datafile)
     ehr = EHR.from_npz(args.datafile)
 
-    logging.info('Creating default SampleSpace from the EHR')
-    default_space = SampleSpace.from_ehr(ehr)
+    if args.samplespace:
+        logging.info(f'Loading samplespace from {args.samplespace}')
+        default_space = SampleSpace.from_npz(args.samplespace)
+    else:
+        logging.info('Creating default SampleSpace from the EHR')
+        default_space = SampleSpace.from_ehr(ehr)
     logging.info(f'Producing {args.nproc} batch(es) of person_ids')
-    batches = default_space.batch_indices(n=args.nproc)
+    batches = tuple(iter_batches(default_space, n=args.nproc))
 
     # Process specs into a list of 2-tuples (index, outfile). The index in each
     # tuple is a mapping from person_id ints to date arrays. If there are no
