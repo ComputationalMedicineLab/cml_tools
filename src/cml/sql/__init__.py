@@ -229,3 +229,7 @@ class SQLGenerator:
             for spec in self.data_spec
         )))
         return self.format(select, cte=cte)
+
+    def gen_create_schema(self):
+        return (f'CREATE SCHEMA IF NOT EXISTS '
+                f'{self.wspace_catalog}.{self.wspace_schema};')
