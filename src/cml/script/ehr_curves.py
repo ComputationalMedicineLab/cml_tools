@@ -210,7 +210,7 @@ def cli():
 
     ### Basic input / output file arguments
     f('-d', '--datafile', type=Path, required=True,
-      help='Input .npy file of structured base EHR data (see cml.ehr.dtypes)')
+      help='Input .npz file of structured base EHR data (see cml.ehr.dtypes)')
 
     f('-m', '--metafile', type=Path, required=True,
       help='Input .pkl list of ConceptMeta tuples (see cml.ehr.dtypes)')
