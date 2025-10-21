@@ -314,3 +314,15 @@ class SOA(Record):
         for dtype, values in zip(cls.dtypes, *zip(records)):
             args.append(np.array(values, dtype=dtype))
         return cls(*args)
+
+    def batch_by_field(self, field, sort=False):
+        """
+        Produce a dictionary mapping rows to unique values of the given field.
+        """
+        # Creates a new (temporary) `self` to operate on if we need self sorted
+        if sort:
+            self = self[np.argsort(getattr(self, field))]
+        values, indices = np.unique(getattr(self, field), return_index=True)
+        batches = np.array_split(np.arange(len(self)), indices)
+        # The zeroth batch is always an empty array using this technique
+        return {v: self[ix] for v, ix in zip(values, batches[1:])}

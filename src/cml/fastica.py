@@ -221,11 +221,10 @@ def apply_model(W, K, Y, X_mean, scale_factors=None, out=None):
     """
     assert W.shape[0] == W.shape[1] and W.shape[1] == K.shape[0]
     assert K.shape[1] == Y.shape[0] and Y.shape[0] == X_mean.shape[0]
+    Y1 = apply_whitening(Y, K, X_mean, out=out)
+    SY = recover_S_from_WX1(W, Y1, scale_by_nsamples=False)
     if scale_factors is not None:
         assert SY.shape[0] == scale_factors.shape[0]
-    Y1 = apply_whitening(Y, K, X_mean, out=out)
-    SY = recover_S_from_WX1(W, Y1, scale_by_m=False)
-    if scale_factors is not None:
         SY.div_(scale_factors)
     return SY
 
