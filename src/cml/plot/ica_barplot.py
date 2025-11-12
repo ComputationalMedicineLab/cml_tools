@@ -131,7 +131,8 @@ def draw_inset_histogram(ax, source, title='Expressions'):
 
 
 def plot_ic(component, source, label_func, color_func, title='',
-            cs_cutoff=0.95, min_elem=10, max_elem=30, norm_xaxis=False):
+            cs_cutoff=0.95, min_elem=10, max_elem=30, norm_xaxis=False,
+            plot_bar_labels=True):
     """
     Plot an independent component and associated source expression
     distribution. The elements of the component to plot are selected via
@@ -147,6 +148,11 @@ def plot_ic(component, source, label_func, color_func, title='',
                                                     min_elem=min_elem,
                                                     max_elem=max_elem,
                                                     norm_xaxis=norm_xaxis)
+    # If we don't want to use the bar labels, just set to None before the call
+    # to draw_barplot below
+    if not plot_bar_labels:
+        bar_labels = None
+
     bar_colors = get_bar_colors(cutoff, min_elem)
     dot_colors = color_func(indices)
     labels = label_func(component, indices)
@@ -155,11 +161,11 @@ def plot_ic(component, source, label_func, color_func, title='',
     gs = fig.add_gridspec(ncols=1, nrows=1)
     ax = fig.add_subplot(gs[0])
     draw_barplot(ax, xs, labels, bar_colors, dot_colors, bar_labels)
-    draw_inset_histogram(ax, source)
+    inset = draw_inset_histogram(ax, source)
 
     subtitle = f'{cutoff} to {cs_cutoff:.2f} ({len(indices)} plotted)'
     fig.suptitle(f'{title} {subtitle}', fontsize=16)
-    return fig, ax
+    return fig, ax, inset
 
 
 def plot_ic_and_inverse(component, source, unmixing, label_func, color_func,
