@@ -10,7 +10,7 @@ def cov_mean(X, block_size=None):
     Memory efficient and fast computation of cov(X) and E[X]. Equivalent usage:
 
     >>> X = torch.rand(121, 10_000, dtype=torch.float64)
-    >>> C, m = low_mem_cov_mean(X)
+    >>> C, m = cov_mean(X)
     >>> assert torch.allclose(C, torch.cov(X, correction=0))
     >>> assert torch.allclose(m, torch.mean(X, axis=1, keepdim=True))
 
