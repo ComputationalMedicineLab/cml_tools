@@ -3,6 +3,7 @@ import logging
 import pickle
 import warnings
 from argparse import ArgumentParser, RawTextHelpFormatter
+from copy import deepcopy
 from operator import itemgetter
 from pathlib import Path
 from pprint import pformat
@@ -19,7 +20,9 @@ from cml.ehr.curves import (build_age_curve,
                             CurvePointSet)
 from cml.ehr.dtypes import Cohort, ConceptMeta, PersonMeta
 from cml.ehr.samplespace import SampleIndex, SampleSpace
-from cml.ehr.standardizer import make_log10scaler, Log10Scaler
+from cml.ehr.standardizer import (DEFAULT_MODE_PARAMS,
+                                  make_log10scaler,
+                                  Log10Scaler)
 from cml.label_expand import expand
 from cml.stats.incremental import IncrStats
 
@@ -202,7 +205,10 @@ def cli():
             stats = np.load(args.stats)
             base_stats = IncrStats(stats['base_labels'], *stats['base_stats'])
             lg10_stats = IncrStats(stats['lg10_labels'], *stats['lg10_stats'])
-            scaler = make_log10scaler(base_stats, lg10_stats, modes, n_obs)
+            params = deepcopy(DEFAULT_MODE_PARAMS)
+            params['Condition']['fill'] = 0.00013689253935660506
+            scaler = make_log10scaler(base_stats, lg10_stats,
+                                      modes, n_obs, params)
             return scaler.astuple
         scaler = Log10Scaler(*check_cache(cache, 'scaler', f, cache_log))
 

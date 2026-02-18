@@ -170,7 +170,7 @@ def plot_ic(component, source, label_func, color_func, title='',
 
 def plot_ic_and_inverse(component, source, unmixing, label_func, color_func,
                         title='', cs_cutoff=0.95, min_elem=10, max_elem=30,
-                        norm_xaxis=False, label_width=88):
+                        norm_xaxis=False, label_width=88, plot_bar_labels=True):
     """Combine the component and unmixing barplots into a single figure."""
     xs0, indices0, cutoff0, bar_labels0 = get_scaled_xs(component,
                                                         cs_cutoff=cs_cutoff,
@@ -183,6 +183,10 @@ def plot_ic_and_inverse(component, source, unmixing, label_func, color_func,
                                                         min_elem=min_elem,
                                                         max_elem=max_elem,
                                                         norm_xaxis=norm_xaxis)
+
+    if not plot_bar_labels:
+        bar_labels0 = None
+        bar_labels1 = None
 
     bar_colors0 = get_bar_colors(cutoff0, min_elem)
     bar_colors1 = get_bar_colors(cutoff1, min_elem)
@@ -208,14 +212,14 @@ def plot_ic_and_inverse(component, source, unmixing, label_func, color_func,
     draw_barplot(ax1, xs1, labels1, bar_colors1, dot_colors1, bar_labels1)
 
     # Each barplot has the same inset histogram of source expressions
-    draw_inset_histogram(ax0, source)
-    draw_inset_histogram(ax1, source)
+    inset0 = draw_inset_histogram(ax0, source)
+    inset1 = draw_inset_histogram(ax1, source)
 
     ax0.set_title(rf'$\mathbf{{A}}$ Values ({cutoff0} to {cs_cutoff})')
     ax1.set_title(rf'$\mathbf{{A}}^{{-1}}$ Values ({cutoff1} to {cs_cutoff})')
     fig.suptitle(title, fontsize=16)
 
-    return fig, (ax0, ax1)
+    return fig, (ax0, ax1), (inset0, inset1)
 
 
 def plot_n_ics(components, sources, label_func, color_func,

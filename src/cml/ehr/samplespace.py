@@ -33,6 +33,12 @@ class SampleIndex(SOA):
         self._npersons = len(ids)
         self._ndates = len(np.unique(self.datetime))
 
+    def __str__(self):
+        return f'{self.__class__.__name__} [size={len(self):,}]'
+
+    def __repr__(self):
+        return f'<{str(self)}>'
+
     # Maybe TODO: build a generalized "datetime unit" abstraction for use here
     # and in ehr.dtypes (and many ehr.curves)?
     def set_dt_unit(self, unit):
@@ -67,6 +73,12 @@ class SampleSpace(SOA):
         self.indices = np.array(indices)
         self.datetimes = np.array(datetimes)
         self._index_map = {p: i for i, p in enumerate(self.person_id)}
+
+    def __str__(self):
+        return f'{self.__class__.__name__} [size={len(self):,}]'
+
+    def __repr__(self):
+        return f'<{str(self)}>'
 
     @property
     def index_map(self):
