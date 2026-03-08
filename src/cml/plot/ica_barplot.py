@@ -8,6 +8,18 @@ from matplotlib.transforms import blended_transform_factory
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 
+# A default set of colors to use in the ICA barplots
+MODE_COLORS = {
+    'Measurement': 'lightcoral',
+    'Condition': 'lightskyblue',
+    'Medication': 'palegreen',
+    'Procedure': 'mediumseagreen',
+    'Sex': 'mediumvioletred',
+    'Race': 'slateblue',
+    'Age': 'teal',
+}
+
+
 def get_scaled_xs(component,
                   cs_cutoff=0.95,
                   min_elem=10,

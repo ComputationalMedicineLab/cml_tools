@@ -79,8 +79,8 @@ def learn_whitening(X, n_component=None, component_thresh=None, apply=True,
     white. This function fits a linear transformation `K` to a matrix of
     observations of `x`. The elements of `x` (the features) are the row
     dimension; the observations of `x` (the samples) are the column dimension;
-    it is assumed therefore that `X.shape[0]` will usually be much larger than
-    `X.shape[1]`.
+    it is assumed therefore that `X.shape[1]` will usually be much larger than
+    `X.shape[0]`.
 
     Let `E` be the eigenvector matrix and `D` the diagonal matrix of
     eigenvalues of the covariance matrix of `X`. Then `K = D^{-1/2}E^T` is a
