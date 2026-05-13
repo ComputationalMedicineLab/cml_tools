@@ -1,4 +1,6 @@
 """Produce bar plots for an ICA model"""
+import pickle
+
 # This is an inplace version 2 of ./ica_model.py; if it works well enough we'll
 # eventually deprecate and remove ./ica_model.py
 import matplotlib as mpl
@@ -18,6 +20,48 @@ MODE_COLORS = {
     'Race': 'slateblue',
     'Age': 'teal',
 }
+
+
+def load_scaler(path):
+    """Utility function to load a `cml.ehr.standardizer.Log10Scaler`"""
+    from cml.ehr.standardizer import Log10Scaler
+    with open(path/'merge_cache.pkl', 'rb') as file:
+        cache = pickle.load(file)
+    age_mean, age_std = cache['age_stats']
+    scaler = Log10Scaler(*cache['scaler'])
+    return scaler, age_mean, age_std
+
+
+def make_color_func(channels, modes, colormap=MODE_COLORS):
+    """Utility to create a color function closure"""
+    def color_func(ordering):
+        colors = []
+        for ix in ordering:
+            concept = channels[ix]
+            colors.append(colormap[modes[concept]])
+        return colors
+    return color_func
+
+
+def make_label_func(channels, modes, scaler, age_mean, age_std, descriptions,
+                    fmt='+.4g'):
+    """Utility to create a label string function closure"""
+    def label_func(component, ordering):
+        labels = []
+        for ix in ordering:
+            concept = channels[ix]
+            match modes[concept]:
+                case 'Age':
+                    arr = np.array([1.0, 1.0+component[ix]])
+                    arr = (arr * age_std) + age_mean
+                    impact = format(arr[1]-arr[0], fmt)
+                case 'Sex'|'Race':
+                    impact = format(component[ix], fmt)
+                case _:
+                    impact = scaler.format_impact(concept, component[ix], spec=fmt)
+            labels.append(f'{descriptions[concept]} ({concept}) [ {impact} ]')
+        return labels
+    return label_func
 
 
 def get_scaled_xs(component,
@@ -120,7 +164,8 @@ def draw_barplot(ax, xs, labels,
     return ax
 
 
-def draw_inset_histogram(ax, source, title='Expressions'):
+def draw_inset_histogram(ax, source, title='Expressions',
+                         *, precomputed=False):
     """Plot the source values pos/neg histogram inset into the Axes"""
     bbox_transform = blended_transform_factory(ax.transAxes, ax.transData)
     # Plot the expressions inset
@@ -130,9 +175,15 @@ def draw_inset_histogram(ax, source, title='Expressions'):
                        bbox_to_anchor=(0.075, 0.0),
                        bbox_transform=bbox_transform,
                        loc="lower left", borderpad=0)
-    inset.hist(x=(source[source > 0], source[source < 0]),
-               bins=100, histtype='stepfilled', log=True,
-               color=None, alpha=0.4, label=('pos', 'neg'))
+    if precomputed:
+        pos_counts, pos_bins, neg_counts, neg_bins = source
+        inset.stairs(pos_counts, pos_bins, fill=True, alpha=0.4, label='pos')
+        inset.stairs(neg_counts, neg_bins, fill=True, alpha=0.4, label='pos')
+        inset.set_yscale('log')
+    else:
+        inset.hist(x=(source[source > 0], source[source < 0]),
+                   bins=100, histtype='stepfilled', log=True,
+                   color=None, alpha=0.4, label=('pos', 'neg'))
     inset.set_title(title, fontsize='small')
     inset.tick_params(direction='in', labelsize='x-small', pad=1.2)
     inset.set_ylim(bottom=0.8, top=None)
@@ -144,7 +195,7 @@ def draw_inset_histogram(ax, source, title='Expressions'):
 
 def plot_ic(component, source, label_func, color_func, title='',
             cs_cutoff=0.95, min_elem=10, max_elem=30, norm_xaxis=False,
-            plot_bar_labels=True):
+            plot_bar_labels=True, precomputed_inset=False):
     """
     Plot an independent component and associated source expression
     distribution. The elements of the component to plot are selected via
@@ -173,7 +224,7 @@ def plot_ic(component, source, label_func, color_func, title='',
     gs = fig.add_gridspec(ncols=1, nrows=1)
     ax = fig.add_subplot(gs[0])
     draw_barplot(ax, xs, labels, bar_colors, dot_colors, bar_labels)
-    inset = draw_inset_histogram(ax, source)
+    inset = draw_inset_histogram(ax, source, precomputed=precomputed_inset)
 
     subtitle = f'{cutoff} to {cs_cutoff:.2f} ({len(indices)} plotted)'
     fig.suptitle(f'{title} {subtitle}', fontsize=16)
@@ -182,7 +233,8 @@ def plot_ic(component, source, label_func, color_func, title='',
 
 def plot_ic_and_inverse(component, source, unmixing, label_func, color_func,
                         title='', cs_cutoff=0.95, min_elem=10, max_elem=30,
-                        norm_xaxis=False, label_width=88, plot_bar_labels=True):
+                        norm_xaxis=False, label_width=88, plot_bar_labels=True,
+                        precomputed_inset=False):
     """Combine the component and unmixing barplots into a single figure."""
     xs0, indices0, cutoff0, bar_labels0 = get_scaled_xs(component,
                                                         cs_cutoff=cs_cutoff,
@@ -224,8 +276,8 @@ def plot_ic_and_inverse(component, source, unmixing, label_func, color_func,
     draw_barplot(ax1, xs1, labels1, bar_colors1, dot_colors1, bar_labels1)
 
     # Each barplot has the same inset histogram of source expressions
-    inset0 = draw_inset_histogram(ax0, source)
-    inset1 = draw_inset_histogram(ax1, source)
+    inset0 = draw_inset_histogram(ax0, source, precomputed=precomputed_inset)
+    inset1 = draw_inset_histogram(ax1, source, precomputed=precomputed_inset)
 
     ax0.set_title(rf'$\mathbf{{A}}$ Values ({cutoff0} to {cs_cutoff})')
     ax1.set_title(rf'$\mathbf{{A}}^{{-1}}$ Values ({cutoff1} to {cs_cutoff})')
@@ -236,7 +288,7 @@ def plot_ic_and_inverse(component, source, unmixing, label_func, color_func,
 
 def plot_n_ics(components, sources, label_func, color_func,
                title='', cs_cutoff=0.95, min_elem=10, max_elem=30,
-               norm_xaxis=False, label_width=88):
+               norm_xaxis=False, label_width=88, precomputed_inset=False):
     """Plot as many components as are given into a single figure."""
     xs = []
     indices = []
@@ -265,7 +317,7 @@ def plot_n_ics(components, sources, label_func, color_func,
     for args in zip(axes, xs, labels, bar_colors, dot_colors, bar_labels):
         draw_barplot(*args)
     for ax, src in zip(axes, sources):
-        draw_inset_histogram(ax, src)
+        draw_inset_histogram(ax, src, precomputed=precomputed_inset)
     for ax, cutoff in zip(axes, cutoffs):
         ax.set_title(rf'$\mathbf{{A}}$ Values ({cutoff} to {cs_cutoff})')
 

@@ -35,6 +35,7 @@ def cv_rf_refit(params, X, y, cv=6):
 
 def auc_bootstrap(y_true, y_pred, n=100, *, max_sample_attempts=1_000):
     """Generate a distribution of AUC's using bootstrap samples from y_pred"""
+    # This takes sort of a long time. Maybe try accelerating?
     aucs = []
     m = len(y_true)
     for i in range(n):
